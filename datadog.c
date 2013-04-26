@@ -393,6 +393,7 @@ PHP_FUNCTION(datadog_transaction_end)
     efree (DATADOG_G (transaction));
 
     DATADOG_G (transaction) = NULL;
+    RETURN_TRUE;
 }
 /* }}} */
 
