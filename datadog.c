@@ -47,7 +47,7 @@ struct _php_datadog_timing_t {
     struct rusage  st_ru;
 };
 
-// Contains transcation
+// Contains transaction
 struct _php_datadog_transaction_t {
     php_datadog_timing_t *timing;
     zval *tags;
