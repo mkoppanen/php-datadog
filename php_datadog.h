@@ -37,12 +37,12 @@ typedef struct _php_datadog_timing_t php_datadog_timing_t;
 typedef struct _php_datadog_transaction_t php_datadog_transaction_t;
 
 ZEND_BEGIN_MODULE_GLOBALS(datadog)
-	zend_bool enabled;			          /* is the module enabled */
-	char *agent_addr;                     /* where to connect for the agent */
-    char *app_name;                       /* name of the application */
-    char *prefix;                         /* prefix for the metrics */
+    zend_bool enabled;                      /* is the module enabled */
+    char *agent_addr;                       /* where to connect for the agent */
+    char *app_name;                         /* name of the application */
+    char *prefix;                           /* prefix for the metrics */
 
-	php_datadog_timing_t *timing;           /* when the request started */
+    php_datadog_timing_t *timing;           /* when the request started */
     php_datadog_transaction_t *transaction; /* currently active transaction */
     zend_bool background;                   /* if this execution is a background task */
 ZEND_END_MODULE_GLOBALS(datadog)
