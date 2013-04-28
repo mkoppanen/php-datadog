@@ -54,15 +54,20 @@ struct _php_datadog_transaction_t {
     size_t st_mem;
 };
 
+static
+void s_smart_str_append_tag (smart_str *str, const char *name, const char *value)
+{
+    smart_str_appendc (str, '#');
+    smart_str_appends (str, name);
+    smart_str_appendc (str, ':');
+    smart_str_appends (str, value);
+    smart_str_appendc (str, ',');
+}
 
 static
-zval *s_request_tags ()
+char *s_request_tags ()
 {
-    zval *tags;
-    const char *f;
-
-    MAKE_STD_ZVAL (tags);
-    array_init (tags);
+    smart_str tags = {0};
 
     if (SG (request_info).path_translated) {
         char *filename;
@@ -73,19 +78,20 @@ zval *s_request_tags ()
             NULL, 0, &filename, &filename_len TSRMLS_CC);
 
         if (filename)
-            add_assoc_string (tags, "filename", filename, 0);
-    } else {
+            s_smart_str_append_tag (&tags, "filename", filename);
+    } else
         // No filename
-        add_assoc_string (tags, "filename", "-", 1);
-    }
+        s_smart_str_append_tag (&tags, "filename", "-");
 
-    if (DATADOG_G(app_name))
-        add_assoc_string (tags, "application", DATADOG_G (app_name), 1);
+    if (DATADOG_G (app_name))
+        s_smart_str_append_tag (&tags, "application", DATADOG_G (app_name));
 
     if (DATADOG_G (background))
-        add_assoc_string (tags, "background", "yes", 1);
+        s_smart_str_append_tag (&tags, "background", "yes");
 
-    return tags;
+    // Terminate the string
+    smart_str_0 (&tags);
+    return pestrdup (tags.c, 1);
 }
 
 static
@@ -102,15 +108,7 @@ int s_append_tags_fn (void *pce TSRMLS_DC, int num_args, va_list args, zend_hash
     }
 
     smart_str *metric = va_arg (args, smart_str *);
-
-    smart_str_appendc (metric, '#');
-    smart_str_appends (metric, key);
-    smart_str_appendc (metric, ':');
-
-    // Append the value
-    smart_str_appends (metric, Z_STRVAL_PP ((zval **) pce));
-    smart_str_appendc (metric, ',');
-
+    s_smart_str_append_tag (metric, key, Z_STRVAL_PP ((zval **) pce));
     return ZEND_HASH_APPLY_KEEP;
 }
 
@@ -162,9 +160,11 @@ zend_bool s_do_send (smart_str *metric TSRMLS_DC)
     if (!stream)
         return 0;
 
-#ifdef mikko_0
+//#ifdef mikko_0
     printf ("metric=[%s]\n", metric->c);
-#endif
+//#endif
+
+    return 1;
 
     // TODO: add logic here where transaction / request stuff gets broken into less than 512 bytes
 
@@ -175,8 +175,6 @@ zend_bool s_do_send (smart_str *metric TSRMLS_DC)
 static
 void s_generate_metric (smart_str *metric, const char *prefix, const char *name, long value, const char *unit, zval *tags TSRMLS_DC)
 {
-    zval *request_tags;
-
     // Global prefix
     if (DATADOG_G (prefix) && strlen (DATADOG_G (prefix))) {
         // Set prefix
@@ -199,8 +197,8 @@ void s_generate_metric (smart_str *metric, const char *prefix, const char *name,
     // First append standard tags
     smart_str_appendc (metric, '|');
 
-    request_tags = s_request_tags ();
-    s_append_tags (metric, request_tags TSRMLS_CC);
+    // Append request tags
+    smart_str_appends (metric, DATADOG_G (request_tags));
 
     // And user tags
     if (tags) {
@@ -209,7 +207,6 @@ void s_generate_metric (smart_str *metric, const char *prefix, const char *name,
                 s_append_tags (metric, tags TSRMLS_CC);
         }
         else if (Z_TYPE_P (tags) == IS_STRING) {
-            smart_str_appendc (metric, '|');
             smart_str_appends (metric, Z_STRVAL_P (tags));
         }
     }
@@ -275,7 +272,7 @@ php_datadog_timing_t *s_datadog_timing ()
     if (!DATADOG_G (enabled))
         return NULL; // Not enabled
 
-    timing = calloc (1, sizeof (php_datadog_timing_t));
+    timing = pemalloc (sizeof (php_datadog_timing_t), 1);
 
     if (gettimeofday (&timing->st_tv, NULL) != 0) {
         // TODO: handle fail
@@ -304,22 +301,40 @@ PHP_FUNCTION(datadog_set_background)
 }
 /* }}} */
 
+// Implementation of metrics
+static
+void s_datadog_metric_collection (INTERNAL_FUNCTION_PARAMETERS, const char *type)
+{
+    char *name;
+    int name_len;
+    long value;
+    zval *tags = NULL;
+    zend_bool retval;
+
+    if (zend_parse_parameters (ZEND_NUM_ARGS() TSRMLS_CC, "sl|a!", &name, &name_len, &value, &tags) != SUCCESS) {
+        return;
+    }
+
+    retval = s_send_metric (name, value, type, tags TSRMLS_CC);
+    RETVAL_BOOL (retval);
+}
+
+
 /* {{{ datadog_timing(string $name, int $milliseconds[, array $tags = array ()])
     Create a timing for a specific entry
 */
 PHP_FUNCTION(datadog_timing)
 {
-    char *name;
-    int name_len;
-    long milliseconds;
-    zval *tags = NULL;
-    zend_bool retval;
+    s_datadog_metric_collection (INTERNAL_FUNCTION_PARAM_PASSTHRU, "ms");
+}
+/* }}} */
 
-    if (zend_parse_parameters (ZEND_NUM_ARGS() TSRMLS_CC, "sl|a!", &name, &name_len, &milliseconds, &tags) != SUCCESS) {
-        return;
-    }
-    retval = s_send_metric (name, milliseconds, "ms", tags TSRMLS_CC);
-    RETVAL_BOOL (retval);
+/* {{{ datadog_gauge(string $name, int $value[, array $tags = array ()])
+    Create a gauge for a specific entry
+*/
+PHP_FUNCTION(datadog_gauge)
+{
+    s_datadog_metric_collection (INTERNAL_FUNCTION_PARAM_PASSTHRU, "g");
 }
 /* }}} */
 
@@ -342,7 +357,7 @@ PHP_FUNCTION(datadog_transaction_begin)
     }
 
     // Allocate new transaction
-    DATADOG_G (transaction)         = emalloc (sizeof (php_datadog_transaction_t));
+    DATADOG_G (transaction)         = pemalloc (sizeof (php_datadog_transaction_t), 1);
     DATADOG_G (transaction)->timing = s_datadog_timing ();
     DATADOG_G (transaction)->st_mem = zend_memory_usage (1 TSRMLS_CC);
 
@@ -385,12 +400,10 @@ PHP_FUNCTION(datadog_transaction_end)
         s_send_metric ("transaction.memory.usage", memory_usage, "g", DATADOG_G (transaction)->tags TSRMLS_CC);
     }
 
-    if (DATADOG_G (transaction)->tags) {
-        Z_DELREF_P (DATADOG_G (transaction)->tags);
-    }
+    zval_ptr_dtor (&(DATADOG_G (transaction)->tags));
 
     free (DATADOG_G (transaction)->timing);
-    efree (DATADOG_G (transaction));
+    pefree (DATADOG_G (transaction), 1);
 
     DATADOG_G (transaction) = NULL;
     RETURN_TRUE;
@@ -398,14 +411,107 @@ PHP_FUNCTION(datadog_transaction_end)
 /* }}} */
 
 PHP_INI_BEGIN()
-    STD_PHP_INI_ENTRY("datadog.enabled",     "1",                     PHP_INI_PERDIR,  OnUpdateBool,    enabled,     zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.agent",       "udp://127.0.0.1:8125",  PHP_INI_PERDIR,  OnUpdateString,  agent_addr,  zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.application", "default",               PHP_INI_PERDIR,  OnUpdateString,  app_name,    zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.prefix",      "php.",                   PHP_INI_PERDIR,  OnUpdateString,  prefix,      zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.enabled",     "1",                    PHP_INI_PERDIR, OnUpdateBool,   enabled,    zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.agent",       "udp://127.0.0.1:8125", PHP_INI_PERDIR, OnUpdateString, agent_addr, zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.application", "default",              PHP_INI_PERDIR, OnUpdateString, app_name,   zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.prefix",      "php.",                 PHP_INI_PERDIR, OnUpdateString, prefix,     zend_datadog_globals, datadog_globals)
 PHP_INI_END()
+
+static
+void s_datadog_capture_error (int type, const char *error_filename, const uint error_lineno, const char *format, va_list args)
+{
+    const char *pretty_tag = NULL;
+
+    switch (type) {
+        case E_ERROR:
+            pretty_tag = "#level:E_ERROR";
+        break;
+
+        case E_CORE_ERROR:
+            pretty_tag = "#level:E_CORE_ERROR";
+        break;
+
+        case E_COMPILE_ERROR:
+            pretty_tag = "#level:E_COMPILE_ERROR";
+        break;
+
+        case E_USER_ERROR:
+            pretty_tag = "#level:E_USER_ERROR";
+        break;
+
+        case E_RECOVERABLE_ERROR:
+            pretty_tag = "#level:E_RECOVERABLE_ERROR";
+        break;
+
+        case E_CORE_WARNING:
+            pretty_tag = "#level:E_CORE_WARNING";
+        break;
+
+        case E_COMPILE_WARNING:
+            pretty_tag = "#level:E_COMPILE_WARNING";
+        break;
+
+        case E_USER_WARNING:
+            pretty_tag = "#level:E_USER_WARNING";
+        break;
+
+        case E_PARSE:
+            pretty_tag = "#level:E_PARSE";
+        break;
+
+        case E_NOTICE:
+            pretty_tag = "#level:E_NOTICE";
+        break;
+
+        case E_USER_NOTICE:
+            pretty_tag = "#level:E_USER_NOTICE";
+        break;
+
+        case E_STRICT:
+            pretty_tag = "#level:E_STRICT";
+        break;
+
+        case E_DEPRECATED:
+            pretty_tag = "#level:E_DEPRECATED";
+        break;
+
+        case E_USER_DEPRECATED:
+            pretty_tag = "#level:E_USER_DEPRECATED";
+        break;
+
+        default:
+            pretty_tag = "#level:UNKNOWN";
+        break;
+    }
+
+    // Create a gauge out of the errors
+    // TODO: add a threshold here after which move into sampling
+    zval *tags;
+    MAKE_STD_ZVAL (tags);
+    ZVAL_STRING (tags, pretty_tag, 1);
+
+    s_send_metric ("error.reporting", 1, "c", tags TSRMLS_CC);
+    zval_ptr_dtor (&tags);
+
+    // pass through to the original error callback
+    DATADOG_G (zend_error_cb) (type, error_filename, error_lineno, format, args);
+}
+
+static
+void s_datadog_override_error_handler (TSRMLS_D) 
+{
+    DATADOG_G (zend_error_cb) = zend_error_cb;
+    zend_error_cb             = &s_datadog_capture_error;
+}
 
 PHP_RINIT_FUNCTION(datadog)
 {
+    // The request tags
+    DATADOG_G (request_tags) = s_request_tags ();
+
+    // Override error handling
+    s_datadog_override_error_handler (TSRMLS_C);
+
     // Init datadog, main timer
     DATADOG_G (timing) = s_datadog_timing ();
     return SUCCESS;
@@ -421,6 +527,20 @@ PHP_RSHUTDOWN_FUNCTION(datadog)
         long peak_memory = zend_memory_peak_usage (1 TSRMLS_CC);
         s_send_metric ("request.memory.peak", peak_memory, "g", NULL TSRMLS_CC);
     }
+
+    if (DATADOG_G (transaction)) {
+        // Open transaction, close it
+        zval_ptr_dtor (&(DATADOG_G (transaction)->tags));
+
+        pefree (DATADOG_G (transaction)->timing, 1);
+        pefree (DATADOG_G (transaction), 1);
+
+        DATADOG_G (transaction) = NULL;
+    }
+
+    if (DATADOG_G (request_tags))
+        pefree (DATADOG_G (request_tags), 1);
+
     return SUCCESS;
 }
 
@@ -459,6 +579,7 @@ PHP_MINFO_FUNCTION(datadog)
 
 static zend_function_entry datadog_functions[] = {
     PHP_FE (datadog_timing,            NULL)
+    PHP_FE (datadog_gauge,             NULL)
     PHP_FE (datadog_set_background,    NULL)
     PHP_FE (datadog_transaction_begin, NULL)
     PHP_FE (datadog_transaction_end,   NULL)
