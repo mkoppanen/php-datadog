@@ -160,11 +160,9 @@ zend_bool s_do_send (smart_str *metric TSRMLS_DC)
     if (!stream)
         return 0;
 
-//#ifdef mikko_0
+#ifdef mikko_0
     printf ("metric=[%s]\n", metric->c);
-//#endif
-
-    return 1;
+#endif
 
     // TODO: add logic here where transaction / request stuff gets broken into less than 512 bytes
 
@@ -319,6 +317,22 @@ void s_datadog_metric_collection (INTERNAL_FUNCTION_PARAMETERS, const char *type
     RETVAL_BOOL (retval);
 }
 
+// Implementation of metrics
+static
+void s_datadog_incr_decr (INTERNAL_FUNCTION_PARAMETERS, int value)
+{
+    char *name;
+    int name_len;
+    zval *tags = NULL;
+    zend_bool retval;
+
+    if (zend_parse_parameters (ZEND_NUM_ARGS() TSRMLS_CC, "s|a!", &name, &name_len, &tags) != SUCCESS) {
+        return;
+    }
+
+    retval = s_send_metric (name, value, "c", tags TSRMLS_CC);
+    RETVAL_BOOL (retval);
+}
 
 /* {{{ datadog_timing(string $name, int $milliseconds[, array $tags = array ()])
     Create a timing for a specific entry
@@ -344,6 +358,24 @@ PHP_FUNCTION(datadog_gauge)
 PHP_FUNCTION(datadog_histogram)
 {
     s_datadog_metric_collection (INTERNAL_FUNCTION_PARAM_PASSTHRU, "h");
+}
+/* }}} */
+
+/* {{{ datadog_increment(string $name[, array $tags = array ()])
+    Increment a counter
+*/
+PHP_FUNCTION(datadog_increment)
+{
+    s_datadog_incr_decr (INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
+/* }}} */
+
+/* {{{ datadog_decrement(string $name[, array $tags = array ()])
+    Decrement a counter
+*/
+PHP_FUNCTION(datadog_decrement)
+{
+    s_datadog_incr_decr (INTERNAL_FUNCTION_PARAM_PASSTHRU, -1);
 }
 /* }}} */
 
@@ -510,7 +542,7 @@ static
 void s_datadog_override_error_handler (TSRMLS_D) 
 {
     DATADOG_G (zend_error_cb) = zend_error_cb;
-    zend_error_cb             = &s_datadog_capture_error;
+    zend_error_cb = &s_datadog_capture_error;
 }
 
 PHP_RINIT_FUNCTION(datadog)
@@ -590,6 +622,8 @@ static zend_function_entry datadog_functions[] = {
     PHP_FE (datadog_timing,            NULL)
     PHP_FE (datadog_gauge,             NULL)
     PHP_FE (datadog_histogram,         NULL)
+    PHP_FE (datadog_increment,         NULL)
+    PHP_FE (datadog_decrement,         NULL)
     PHP_FE (datadog_set_background,    NULL)
     PHP_FE (datadog_transaction_begin, NULL)
     PHP_FE (datadog_transaction_end,   NULL)
@@ -607,7 +641,7 @@ zend_module_entry datadog_module_entry = {
     PHP_MINFO(datadog),
     PHP_DATADOG_EXTVER,
     PHP_MODULE_GLOBALS(datadog),
-    PHP_GINIT(datadog), /* GINIT */
+    PHP_GINIT(datadog),
     NULL, /* GSHUTDOWN */
     NULL,
     STANDARD_MODULE_PROPERTIES_EX
