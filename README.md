@@ -49,3 +49,10 @@ Authors
 =======
 
 * Lentor Solutions http://lentor.io/
+
+
+TODO
+====
+
+* Add support for sending events, currently pending on having non-blocking way to send events
+* Compile on Windows

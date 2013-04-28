@@ -24,6 +24,9 @@
 #include "ext/standard/php_string.h"
 #include "SAPI.h"
 
+// getrusage
+#include <sys/resource.h>
+
 // Needed for times syscall
 # ifndef timersub
 #define timersub(tvp, uvp, vvp) do { \
@@ -65,8 +68,9 @@ void s_smart_str_append_tag (smart_str *str, const char *name, const char *value
 }
 
 static
-char *s_request_tags ()
+char *s_request_tags (TSRMLS_D)
 {
+    char *retval;
     smart_str tags = {0};
 
     if (SG (request_info).path_translated) {
@@ -77,8 +81,10 @@ char *s_request_tags ()
         php_basename (SG (request_info).path_translated, strlen (SG (request_info).path_translated),
             NULL, 0, &filename, &filename_len TSRMLS_CC);
 
-        if (filename)
+        if (filename) {
             s_smart_str_append_tag (&tags, "filename", filename);
+            efree (filename);
+        }
     } else
         // No filename
         s_smart_str_append_tag (&tags, "filename", "-");
@@ -91,14 +97,18 @@ char *s_request_tags ()
 
     // Terminate the string
     smart_str_0 (&tags);
-    return pestrdup (tags.c, 1);
+    retval = pestrdup (tags.c, 1);
+
+    smart_str_free (&tags);
+    return retval;
 }
 
 static
 int s_append_tags_fn (void *pce TSRMLS_DC, int num_args, va_list args, zend_hash_key *hash_key)
 {
     int key_len;
-    char *key, key_buf[48];
+    const char *key;
+    char key_buf[48];
 
     if (hash_key->nKeyLength == 0) {
         snprintf (key_buf, 48, "%ld", hash_key->h);
@@ -120,19 +130,23 @@ void s_append_tags (smart_str *metric, zval *tags TSRMLS_DC)
 }
 
 static
-php_stream *s_datadog_get_stream (const char *addr, size_t addr_len)
+php_stream *s_datadog_get_stream (const char *addr, size_t addr_len TSRMLS_DC)
 {
     struct timeval tv;
 
     php_stream *stream;
-    char *err_msg;
+    char *err_msg = NULL;
     char persistent_id [96];
-    int err_code;
+    int err_code = 0;
 
     snprintf (persistent_id, 96, "datadog:%s", addr);
 
+    // TODO: hardcoded
+    tv.tv_sec  = 10;
+    tv.tv_usec = 0;
+
     stream = php_stream_xport_create (addr, addr_len,
-                                      ~REPORT_ERRORS, STREAM_XPORT_CLIENT | STREAM_XPORT_CONNECT,
+                                      0, STREAM_XPORT_CLIENT | STREAM_XPORT_CONNECT,
                                       persistent_id, &tv, NULL, &err_msg, &err_code);
 
     if (!stream)
@@ -142,6 +156,7 @@ php_stream *s_datadog_get_stream (const char *addr, size_t addr_len)
         php_stream_close (stream);
         return NULL;
     }
+    php_stream_auto_cleanup (stream);
     return stream;
 }
 
@@ -155,7 +170,7 @@ zend_bool s_do_send (smart_str *metric TSRMLS_DC)
     smart_str_0 (metric);
 
     // Get a socket handle
-    stream = s_datadog_get_stream (DATADOG_G (agent_addr), strlen (DATADOG_G (agent_addr)));
+    stream = s_datadog_get_stream (DATADOG_G (agent_addr), strlen (DATADOG_G (agent_addr)) TSRMLS_CC);
 
     if (!stream)
         return 0;
@@ -257,13 +272,13 @@ void s_send_transaction (php_datadog_timing_t *timing, const char *prefix, zval 
         smart_str_appendc (&tr_end, '\n');
     }
     // Send end of request statistics
-    s_do_send (&tr_end);
+    s_do_send (&tr_end TSRMLS_CC);
     smart_str_free (&tr_end);
 }
 
 // Initialises the datadog transaction
 static
-php_datadog_timing_t *s_datadog_timing ()
+php_datadog_timing_t *s_datadog_timing (TSRMLS_D)
 {
     php_datadog_timing_t *timing;
 
@@ -411,7 +426,7 @@ PHP_FUNCTION(datadog_transaction_begin)
 
     // Allocate new transaction
     DATADOG_G (transaction)         = pemalloc (sizeof (php_datadog_transaction_t), 1);
-    DATADOG_G (transaction)->timing = s_datadog_timing ();
+    DATADOG_G (transaction)->timing = s_datadog_timing (TSRMLS_C);
     DATADOG_G (transaction)->st_mem = zend_memory_usage (1 TSRMLS_CC);
 
     MAKE_STD_ZVAL (DATADOG_G (transaction)->tags);
@@ -457,6 +472,7 @@ PHP_FUNCTION(datadog_transaction_end)
         s_send_metric ("transaction.memory.usage", memory_usage, "g", DATADOG_G (transaction)->tags TSRMLS_CC);
     }
 
+    Z_DELREF_P (DATADOG_G (transaction)->tags);
     zval_ptr_dtor (&(DATADOG_G (transaction)->tags));
 
     free (DATADOG_G (transaction)->timing);
@@ -547,6 +563,7 @@ void s_datadog_capture_error (int type, const char *error_filename, const uint e
     MAKE_STD_ZVAL (tags);
     ZVAL_STRING (tags, pretty_tag, 1);
 
+    TSRMLS_FETCH ();
     s_send_metric ("error.reporting", 1, "c", tags TSRMLS_CC);
     zval_ptr_dtor (&tags);
 
@@ -565,13 +582,13 @@ PHP_RINIT_FUNCTION(datadog)
 {
     if (DATADOG_G (enabled)) {
         // The request tags
-        DATADOG_G (request_tags) = s_request_tags ();
+        DATADOG_G (request_tags) = s_request_tags (TSRMLS_C);
 
         // Override error handling
         s_datadog_override_error_handler (TSRMLS_C);
 
         // Init datadog, main timer
-        DATADOG_G (timing) = s_datadog_timing ();
+        DATADOG_G (timing) = s_datadog_timing (TSRMLS_C);
     }
     return SUCCESS;
 }
@@ -586,6 +603,8 @@ PHP_RSHUTDOWN_FUNCTION(datadog)
 
             long peak_memory = zend_memory_peak_usage (1 TSRMLS_CC);
             s_send_metric ("request.memory.peak", peak_memory, "g", NULL TSRMLS_CC);
+
+            pefree (timing, 1);
         }
 
         if (DATADOG_G (transaction)) {
