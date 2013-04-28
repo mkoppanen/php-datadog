@@ -34,7 +34,7 @@ INI settings
 |----------------------|------------------------|----------------|----------------------------------------------------------------|
 |"datadog.enabled"     | "1"                    | PHP_INI_PERDIR | Whether to enable datadog monitoring                           |
 |"datadog.agent"       | "udp://127.0.0.1:8125" | PHP_INI_PERDIR | Address of the dd-agent                                        |
-|"datadog.application" | "default"              | PHP_INI_PERDIR | Application name to use in monitoring (adds application:X tag) |
+|"datadog.application" | "default"              | PHP_INI_PERDIR | Application name to use in the automatic tag                   |
 |"datadog.prefix"      | "php."                 | PHP_INI_PERDIR | Prefix to use for PHP metrics                                  |
 
 
