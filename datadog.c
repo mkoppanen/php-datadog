@@ -92,9 +92,6 @@ char *s_request_tags (TSRMLS_D)
     if (DATADOG_G (app_name))
         s_smart_str_append_tag (&tags, "application", DATADOG_G (app_name));
 
-    if (DATADOG_G (background))
-        s_smart_str_append_tag (&tags, "background", "yes");
-
     // Terminate the string
     smart_str_0 (&tags);
     retval = pestrdup (tags.c, 1);
@@ -212,6 +209,10 @@ void s_generate_metric (smart_str *metric, const char *prefix, const char *name,
 
     // Append request tags
     smart_str_appends (metric, DATADOG_G (request_tags));
+
+    // Background job?
+    if (DATADOG_G (background))
+        s_smart_str_append_tag (&tags, "background", "yes");
 
     // And user tags
     if (tags) {
