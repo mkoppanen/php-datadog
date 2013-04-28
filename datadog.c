@@ -338,6 +338,15 @@ PHP_FUNCTION(datadog_gauge)
 }
 /* }}} */
 
+/* {{{ datadog_histogram(string $name, int $value[, array $tags = array ()])
+    Create a history for a specific entry
+*/
+PHP_FUNCTION(datadog_histogram)
+{
+    s_datadog_metric_collection (INTERNAL_FUNCTION_PARAM_PASSTHRU, "h");
+}
+/* }}} */
+
 /* {{{ datadog_transaction_begin(string $name[, array $tags = array ()])
     Create a timing for a specific transaction
 */
@@ -580,6 +589,7 @@ PHP_MINFO_FUNCTION(datadog)
 static zend_function_entry datadog_functions[] = {
     PHP_FE (datadog_timing,            NULL)
     PHP_FE (datadog_gauge,             NULL)
+    PHP_FE (datadog_histogram,         NULL)
     PHP_FE (datadog_set_background,    NULL)
     PHP_FE (datadog_transaction_begin, NULL)
     PHP_FE (datadog_transaction_end,   NULL)
