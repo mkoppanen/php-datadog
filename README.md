@@ -40,3 +40,9 @@ INI settings
 
 Datadog extension monitors request times, request memory and CPU usage and rate of errors. Each PHP error will increment counter
 called "error.reporting" (by default it will be prefixed with php.) and sets the level of the error as a tag for the metric.
+
+
+Authors
+=======
+
+* Lentor Solutions http://lentor.io/
