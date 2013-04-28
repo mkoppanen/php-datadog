@@ -32,10 +32,10 @@ INI settings
 
 | Name                 | Default value          | Scope          | Description                                                    |
 |----------------------|------------------------|----------------|----------------------------------------------------------------|
-|"datadog.enabled"     | "1"                    | PHP_INI_PERDIR | Whether to enable datadog monitoring                           |
-|"datadog.agent"       | "udp://127.0.0.1:8125" | PHP_INI_PERDIR | Address of the dd-agent                                        |
-|"datadog.application" | "default"              | PHP_INI_PERDIR | Application name to use in the automatic tag                   |
-|"datadog.prefix"      | "php."                 | PHP_INI_PERDIR | Prefix to use for PHP metrics                                  |
+| datadog.enabled      | true                   | PHP_INI_PERDIR | Whether to enable datadog monitoring                           |
+| datadog.agent        | "udp://127.0.0.1:8125" | PHP_INI_PERDIR | Address of the dd-agent                                        |
+| datadog.application  | "default"              | PHP_INI_PERDIR | Application name to use in the automatic tag                   |
+| datadog.prefix       | "php."                 | PHP_INI_PERDIR | Prefix to use for PHP metrics                                  |
 
 
 Datadog extension monitors request times, request memory and CPU usage and rate of errors. Each PHP error will increment counter
