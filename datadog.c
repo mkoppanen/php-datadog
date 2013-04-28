@@ -342,7 +342,7 @@ void s_datadog_incr_decr (INTERNAL_FUNCTION_PARAMETERS, int value)
     RETVAL_BOOL (retval);
 }
 
-/* {{{ datadog_timing(string $name, int $milliseconds[, array $tags = array ()])
+/* {{{ boolean datadog_timing(string $name, int $milliseconds[, array $tags = array ()])
     Create a timing for a specific entry
 */
 PHP_FUNCTION(datadog_timing)
@@ -351,7 +351,7 @@ PHP_FUNCTION(datadog_timing)
 }
 /* }}} */
 
-/* {{{ datadog_gauge(string $name, int $value[, array $tags = array ()])
+/* {{{ boolean datadog_gauge(string $name, int $value[, array $tags = array ()])
     Create a gauge for a specific entry
 */
 PHP_FUNCTION(datadog_gauge)
@@ -360,7 +360,7 @@ PHP_FUNCTION(datadog_gauge)
 }
 /* }}} */
 
-/* {{{ datadog_histogram(string $name, int $value[, array $tags = array ()])
+/* {{{ boolean datadog_histogram(string $name, int $value[, array $tags = array ()])
     Create a history for a specific entry
 */
 PHP_FUNCTION(datadog_histogram)
@@ -369,7 +369,7 @@ PHP_FUNCTION(datadog_histogram)
 }
 /* }}} */
 
-/* {{{ datadog_increment(string $name[, array $tags = array ()])
+/* {{{ boolean datadog_increment(string $name[, array $tags = array ()])
     Increment a counter
 */
 PHP_FUNCTION(datadog_increment)
@@ -378,7 +378,7 @@ PHP_FUNCTION(datadog_increment)
 }
 /* }}} */
 
-/* {{{ datadog_decrement(string $name[, array $tags = array ()])
+/* {{{ boolean datadog_decrement(string $name[, array $tags = array ()])
     Decrement a counter
 */
 PHP_FUNCTION(datadog_decrement)
@@ -387,7 +387,7 @@ PHP_FUNCTION(datadog_decrement)
 }
 /* }}} */
 
-/* {{{ datadog_transaction_begin(string $name[, array $tags = array ()])
+/* {{{ boolean datadog_transaction_begin(string $name[, array $tags = array ()])
     Create a timing for a specific transaction
 */
 PHP_FUNCTION(datadog_transaction_begin)
@@ -430,7 +430,7 @@ PHP_FUNCTION(datadog_transaction_begin)
 }
 /* }}} */
 
-/* {{{ datadog_transaction_end([boolean $discard = false])
+/* {{{ boolean datadog_transaction_end([boolean $discard = false])
     End currently active transaction
 */
 PHP_FUNCTION(datadog_transaction_end)
@@ -477,6 +477,7 @@ PHP_INI_END()
 static
 void s_datadog_capture_error (int type, const char *error_filename, const uint error_lineno, const char *format, va_list args)
 {
+    zval *tags;
     const char *pretty_tag = NULL;
 
     switch (type) {
@@ -543,7 +544,6 @@ void s_datadog_capture_error (int type, const char *error_filename, const uint e
 
     // Create a gauge out of the errors
     // TODO: add a threshold here after which move into sampling
-    zval *tags;
     MAKE_STD_ZVAL (tags);
     ZVAL_STRING (tags, pretty_tag, 1);
 

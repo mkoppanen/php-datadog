@@ -49,17 +49,8 @@ ZEND_BEGIN_MODULE_GLOBALS(datadog)
     zend_bool background;                   /* if this execution is a background task */
     char *request_tags;                     /* tags for this request */
 
-
+    /* The original error callback, there seems to be no typedef for this */
     void (*zend_error_cb) (int type, const char *error_filename, const uint error_lineno, const char *format, va_list args);
-
-    //zend_error_cb error_cb;	                /* the original zend_error_cb */
-
-    //zend_ptr_stack user_error_handlers;     /* previous user error handlers */
-	//zend_stack user_error_handler_levels;   /* the levels the user error handler handles */
-	//zval *user_error_handler;               /* the current active user error handler */
-
-	//void (*orig_set_error_handler)(INTERNAL_FUNCTION_PARAMETERS);       /* the set_error_handle entry */
-	//void (*orig_restore_error_handler)(INTERNAL_FUNCTION_PARAMETERS);   /* the restore error handler entry */
 
 ZEND_END_MODULE_GLOBALS(datadog)
 
