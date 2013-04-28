@@ -313,6 +313,10 @@ void s_datadog_metric_collection (INTERNAL_FUNCTION_PARAMETERS, const char *type
         return;
     }
 
+    if (!DATADOG_G (enabled)) {
+        RETURN_FALSE;
+    }
+
     retval = s_send_metric (name, value, type, tags TSRMLS_CC);
     RETVAL_BOOL (retval);
 }
@@ -328,6 +332,10 @@ void s_datadog_incr_decr (INTERNAL_FUNCTION_PARAMETERS, int value)
 
     if (zend_parse_parameters (ZEND_NUM_ARGS() TSRMLS_CC, "s|a!", &name, &name_len, &tags) != SUCCESS) {
         return;
+    }
+
+    if (!DATADOG_G (enabled)) {
+        RETURN_FALSE;
     }
 
     retval = s_send_metric (name, value, "c", tags TSRMLS_CC);
@@ -392,6 +400,10 @@ PHP_FUNCTION(datadog_transaction_begin)
         return;
     }
 
+    if (!DATADOG_G (enabled)) {
+        RETURN_FALSE;
+    }
+
     // There is already a transaction
     if (DATADOG_G (transaction)) {
         RETURN_FALSE;
@@ -427,6 +439,10 @@ PHP_FUNCTION(datadog_transaction_end)
 
     if (zend_parse_parameters (ZEND_NUM_ARGS() TSRMLS_CC, "|b", &discard) != SUCCESS) {
         return;
+    }
+
+    if (!DATADOG_G (enabled)) {
+        RETURN_FALSE;
     }
 
     if (!DATADOG_G (transaction)) {
@@ -547,41 +563,44 @@ void s_datadog_override_error_handler (TSRMLS_D)
 
 PHP_RINIT_FUNCTION(datadog)
 {
-    // The request tags
-    DATADOG_G (request_tags) = s_request_tags ();
+    if (DATADOG_G (enabled)) {
+        // The request tags
+        DATADOG_G (request_tags) = s_request_tags ();
 
-    // Override error handling
-    s_datadog_override_error_handler (TSRMLS_C);
+        // Override error handling
+        s_datadog_override_error_handler (TSRMLS_C);
 
-    // Init datadog, main timer
-    DATADOG_G (timing) = s_datadog_timing ();
+        // Init datadog, main timer
+        DATADOG_G (timing) = s_datadog_timing ();
+    }
     return SUCCESS;
 }
 
 PHP_RSHUTDOWN_FUNCTION(datadog)
 {
-    php_datadog_timing_t *timing = DATADOG_G (timing);
+    if (DATADOG_G (enabled)) {
+        php_datadog_timing_t *timing = DATADOG_G (timing);
 
-    if (timing) {
-        s_send_transaction (timing, "request", NULL TSRMLS_CC);
+        if (timing) {
+            s_send_transaction (timing, "request", NULL TSRMLS_CC);
 
-        long peak_memory = zend_memory_peak_usage (1 TSRMLS_CC);
-        s_send_metric ("request.memory.peak", peak_memory, "g", NULL TSRMLS_CC);
+            long peak_memory = zend_memory_peak_usage (1 TSRMLS_CC);
+            s_send_metric ("request.memory.peak", peak_memory, "g", NULL TSRMLS_CC);
+        }
+
+        if (DATADOG_G (transaction)) {
+            // Open transaction, close it
+            zval_ptr_dtor (&(DATADOG_G (transaction)->tags));
+
+            pefree (DATADOG_G (transaction)->timing, 1);
+            pefree (DATADOG_G (transaction), 1);
+
+            DATADOG_G (transaction) = NULL;
+        }
+
+        if (DATADOG_G (request_tags))
+            pefree (DATADOG_G (request_tags), 1);
     }
-
-    if (DATADOG_G (transaction)) {
-        // Open transaction, close it
-        zval_ptr_dtor (&(DATADOG_G (transaction)->tags));
-
-        pefree (DATADOG_G (transaction)->timing, 1);
-        pefree (DATADOG_G (transaction), 1);
-
-        DATADOG_G (transaction) = NULL;
-    }
-
-    if (DATADOG_G (request_tags))
-        pefree (DATADOG_G (request_tags), 1);
-
     return SUCCESS;
 }
 
