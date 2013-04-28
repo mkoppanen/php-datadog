@@ -18,4 +18,14 @@ The API
 
     boolean datadog_transaction_begin (string $name[, array $tags = array ()])
 
-    boolean datadog_transaction_end([boolean $discard = false])
+    boolean datadog_transaction_end ([boolean $discard = false])
+    
+INI settings
+============
+
+    | Name                 | Default value          | Scope          |
+    |----------------------|------------------------|----------------|
+    |"datadog.enabled"     | "1"                    | PHP_INI_PERDIR |
+    |"datadog.agent"       | "udp://127.0.0.1:8125" | PHP_INI_PERDIR |
+    |"datadog.application" | "default"              | PHP_INI_PERDIR |
+    |"datadog.prefix"      | "php."                 | PHP_INI_PERDIR |
