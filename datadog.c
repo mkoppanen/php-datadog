@@ -42,6 +42,8 @@
 
 #define timeval_to_msec(_my_tv) ((_my_tv.tv_sec * 1000) + (_my_tv.tv_usec / 1000))
 
+#define timeval_to_double(_my_tv) (double)(_my_tv).tv_sec + ((double)(_my_tv).tv_usec / 1000000.0)
+
 // Bring in the globals
 ZEND_DECLARE_MODULE_GLOBALS(datadog)
 
@@ -180,9 +182,9 @@ zend_bool s_do_send (smart_str *metric TSRMLS_DC)
     if (!stream)
         return 0;
 
-#ifdef mikko_0
+//#ifdef mikko_0
     printf ("metric=[%s]\n", metric->c);
-#endif
+//#endif
 
     // TODO: add logic here where transaction / request stuff gets broken into less than 512 bytes
 
@@ -191,7 +193,7 @@ zend_bool s_do_send (smart_str *metric TSRMLS_DC)
 }
 
 static
-void s_generate_metric (smart_str *metric, const char *sub_prefix, const char *name, long value, const char *unit, double sample_rate, zval *tags TSRMLS_DC)
+void s_generate_metric (smart_str *metric, const char *sub_prefix, const char *name, double value, const char *unit, double sample_rate, zval *tags TSRMLS_DC)
 {
     char *buffer;
 
@@ -208,7 +210,7 @@ void s_generate_metric (smart_str *metric, const char *sub_prefix, const char *n
     }
 
     // Generate the metric
-    spprintf (&buffer, 0, "%s:%ld|%s|@%.3f", name, value, unit, sample_rate);
+    spprintf (&buffer, 0, "%s:%f|%s|@%.3f", name, value, unit, sample_rate);
     smart_str_appends (metric, buffer);
     efree (buffer);
 
@@ -239,7 +241,7 @@ void s_generate_metric (smart_str *metric, const char *sub_prefix, const char *n
 }
 
 static
-zend_bool s_send_metric (const char *name, long value, const char *unit, double sample_rate, zval *tags TSRMLS_DC)
+zend_bool s_send_metric (const char *name, double value, const char *unit, double sample_rate, zval *tags TSRMLS_DC)
 {
     zend_bool rc;
     smart_str metric = { 0 };
@@ -284,10 +286,10 @@ void s_send_transaction (php_datadog_timing_t *timing, const char *prefix, doubl
         timersub (&en_ru.ru_utime, &(timing->st_ru.ru_utime), &tv_utime);
         timersub (&en_ru.ru_stime, &(timing->st_ru.ru_stime), &tv_stime);
 
-        s_generate_metric (&tr_end, prefix, "time.user", timeval_to_msec (tv_utime), "ms", sample_rate, tags TSRMLS_CC);
+        s_generate_metric (&tr_end, prefix, "time.user", timeval_to_double (tv_utime), "ms", sample_rate, tags TSRMLS_CC);
         smart_str_appendc (&tr_end, '\n');
 
-        s_generate_metric (&tr_end, prefix, "time.sys",  timeval_to_msec (tv_stime), "ms", sample_rate, tags TSRMLS_CC);
+        s_generate_metric (&tr_end, prefix, "time.sys",  timeval_to_double (tv_stime), "ms", sample_rate, tags TSRMLS_CC);
         smart_str_appendc (&tr_end, '\n');
     }
     // Send end of request statistics
@@ -339,12 +341,12 @@ void s_datadog_metric_collection (INTERNAL_FUNCTION_PARAMETERS, const char *type
 {
     char *name;
     int name_len;
-    long value;
+    double value;
     zval *tags = NULL;
     zend_bool retval;
     double sample_rate = 1.0;
 
-    if (zend_parse_parameters (ZEND_NUM_ARGS() TSRMLS_CC, "sl|da!", &name, &name_len, &value, &sample_rate, &tags) != SUCCESS) {
+    if (zend_parse_parameters (ZEND_NUM_ARGS() TSRMLS_CC, "sd|da!", &name, &name_len, &value, &sample_rate, &tags) != SUCCESS) {
         return;
     }
 
@@ -588,7 +590,7 @@ void s_datadog_capture_error (int type, const char *error_filename, const uint e
     ZVAL_STRING (tags, pretty_tag, 1);
 
     TSRMLS_FETCH ();
-    s_send_metric ("error.reporting", 1, "c", 1.0, tags TSRMLS_CC);
+    s_send_metric ("error.reporting", 1.0, "c", 1.0, tags TSRMLS_CC);
     zval_ptr_dtor (&tags);
 
     // pass through to the original error callback
