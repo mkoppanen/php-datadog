@@ -115,9 +115,6 @@ char *s_request_tags (TSRMLS_D)
         // No filename
         s_smart_str_append_tag (&tags, "filename", "-");
 
-    if (DATADOG_G (app_name))
-        s_smart_str_append_tag (&tags, "application", DATADOG_G (app_name));
-
     // Terminate the string
     smart_str_0 (&tags);
     retval = pestrdup (tags.c, 1);
@@ -239,6 +236,10 @@ void s_generate_metric (smart_str *metric, const char *sub_prefix, const char *n
     // Background job?
     if (DATADOG_G (background))
         s_smart_str_append_tag (metric, "background", "yes");
+
+    // Application name
+    if (DATADOG_G (app_name))
+        s_smart_str_append_tag (metric, "application", DATADOG_G (app_name));
 
     // And user tags
     if (tags) {
@@ -440,7 +441,7 @@ PHP_FUNCTION(datadog_set)
 */
 PHP_FUNCTION(datadog_increment)
 {
-    s_datadog_incr_decr (INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+    s_datadog_incr_decr (INTERNAL_FUNCTION_PARAM_PASSTHRU, 1.0);
 }
 /* }}} */
 
@@ -449,7 +450,7 @@ PHP_FUNCTION(datadog_increment)
 */
 PHP_FUNCTION(datadog_decrement)
 {
-    s_datadog_incr_decr (INTERNAL_FUNCTION_PARAM_PASSTHRU, -1);
+    s_datadog_incr_decr (INTERNAL_FUNCTION_PARAM_PASSTHRU, -1.0);
 }
 /* }}} */
 
@@ -537,10 +538,55 @@ PHP_FUNCTION(datadog_transaction_end)
 }
 /* }}} */
 
+/* {{{ boolean datadog_set_application(string $name)
+    Set application name, wrapper for ini_set ('datadog.application', $name);
+*/
+PHP_FUNCTION(datadog_set_application)
+{
+    char *name;
+    int name_len;
+
+    if (zend_parse_parameters (ZEND_NUM_ARGS() TSRMLS_CC, "s", &name, &name_len) != SUCCESS) {
+        return;
+    }
+
+    if (!DATADOG_G (enabled)) {
+        RETURN_FALSE;
+    }
+
+    // Update request tags
+    if (zend_alter_ini_entry ("datadog.application", sizeof ("datadog.application"), name, name_len, PHP_INI_USER, PHP_INI_STAGE_RUNTIME TSRMLS_CC) == FAILURE) {
+        RETURN_FALSE;
+    }
+    RETURN_TRUE;
+}
+/* }}} */
+
+/* {{{ boolean datadog_discard_request()
+    Discards request statistics for this request. Useful for background tasks
+*/
+PHP_FUNCTION(datadog_discard_request)
+{
+    if (zend_parse_parameters_none () != SUCCESS) {
+        return;
+    }
+
+    if (!DATADOG_G (enabled)) {
+        RETURN_FALSE;
+    }
+
+    pefree (DATADOG_G (timing), 1);
+    DATADOG_G (timing) = NULL;
+
+    RETURN_TRUE;
+}
+/* }}} */
+
+
 PHP_INI_BEGIN()
     STD_PHP_INI_ENTRY("datadog.enabled",            "1",                    PHP_INI_PERDIR, OnUpdateBool,   enabled,            zend_datadog_globals, datadog_globals)
     STD_PHP_INI_ENTRY("datadog.agent",              "udp://127.0.0.1:8125", PHP_INI_PERDIR, OnUpdateString, agent_addr,         zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.application",        "default",              PHP_INI_PERDIR, OnUpdateString, app_name,           zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.application",        "default",              PHP_INI_ALL,    OnUpdateString, app_name,           zend_datadog_globals, datadog_globals)
     STD_PHP_INI_ENTRY("datadog.prefix",             "php.",                 PHP_INI_PERDIR, OnUpdateString, prefix,             zend_datadog_globals, datadog_globals)
     STD_PHP_INI_ENTRY("datadog.strip_query_string", "1",                    PHP_INI_PERDIR, OnUpdateBool,   strip_query_string, zend_datadog_globals, datadog_globals)
 PHP_INI_END()
@@ -652,14 +698,12 @@ PHP_RINIT_FUNCTION(datadog)
 PHP_RSHUTDOWN_FUNCTION(datadog)
 {
     if (DATADOG_G (enabled)) {
-        php_datadog_timing_t *timing = DATADOG_G (timing);
-
-        if (timing) {
+        if (DATADOG_G (timing)) {
             long peak_memory = zend_memory_peak_usage (1 TSRMLS_CC);
 
-            s_send_transaction (timing, "request", 1.0, NULL TSRMLS_CC);
+            s_send_transaction (DATADOG_G (timing), "request", 1.0, NULL TSRMLS_CC);
             s_send_metric ("request.mem.peak", peak_memory, "g", 1.0, NULL TSRMLS_CC);
-            pefree (timing, 1);
+            pefree (DATADOG_G (timing), 1);
         }
 
         if (DATADOG_G (transaction)) {
@@ -721,6 +765,8 @@ static zend_function_entry datadog_functions[] = {
     PHP_FE (datadog_set_background,    NULL)
     PHP_FE (datadog_transaction_begin, NULL)
     PHP_FE (datadog_transaction_end,   NULL)
+    PHP_FE (datadog_set_application,   NULL)
+    PHP_FE (datadog_discard_request,   NULL)
     {NULL, NULL, NULL}
 };
 

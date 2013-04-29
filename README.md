@@ -50,6 +50,12 @@ The API
     // End a transaction
     boolean datadog_transaction_end ([boolean $discard = false])
 
+    // Sets the application name, affects metrics sent after the call
+    boolean datadog_set_application (string $name)
+
+    // Discard request statistics 
+    boolean datadog_discard_request ()    
+    
 
 INI settings
 ============
