@@ -10,7 +10,7 @@ It is recommended to run:
 
     pear package
     
-before building and using the generated package. This ensures that version number is correctly set in header files.
+before building and using the generated package. This ensures that the version number is correctly replaced in the header files.
 
 
 Automatic tags
