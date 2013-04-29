@@ -195,9 +195,9 @@ zend_bool s_do_send (smart_str *metric TSRMLS_DC)
     if (!stream)
         return 0;
 
-//#ifdef mikko_0
+#ifdef mikko_0
     printf ("metric=[%s]\n", metric->c);
-//#endif
+#endif
 
     // TODO: add logic here where transaction / request stuff gets broken into less than 512 bytes
 
