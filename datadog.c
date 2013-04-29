@@ -286,10 +286,10 @@ void s_send_transaction (php_datadog_timing_t *timing, const char *prefix, doubl
         timersub (&en_ru.ru_utime, &(timing->st_ru.ru_utime), &tv_utime);
         timersub (&en_ru.ru_stime, &(timing->st_ru.ru_stime), &tv_stime);
 
-        s_generate_metric (&tr_end, prefix, "time.user", timeval_to_double (tv_utime), "ms", sample_rate, tags TSRMLS_CC);
+        s_generate_metric (&tr_end, prefix, "cpu.user", timeval_to_double (tv_utime), "ms", sample_rate, tags TSRMLS_CC);
         smart_str_appendc (&tr_end, '\n');
 
-        s_generate_metric (&tr_end, prefix, "time.sys",  timeval_to_double (tv_stime), "ms", sample_rate, tags TSRMLS_CC);
+        s_generate_metric (&tr_end, prefix, "cpu.sys",  timeval_to_double (tv_stime), "ms", sample_rate, tags TSRMLS_CC);
         smart_str_appendc (&tr_end, '\n');
     }
     // Send end of request statistics
