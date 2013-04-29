@@ -20,7 +20,7 @@ Currently the extension will add the following automatic tags to every metric:
 
     application:{datadog.application}
     filename:{basename PATH_TRANSLATED}
-    request_uri:{REQUEST_URI without query string} (see ini-settings)
+    request_uri:{REQUEST_URI} (see ini-setting datadog.strip_query)
 
 The API
 =======
@@ -36,6 +36,9 @@ The API
 
     // Send a histogram
     boolean datadog_histogram (string $name, float $value[, float $sample_rate, [array $tags = array ()]])
+
+    // Send a set
+    boolean datadog_set (string $name, float $value[, float $sample_rate, [array $tags = array ()]])
 
     // Increment a named metric
     boolean datadog_increment (string $name[, float $sample_rate, [array $tags = array ()]])
