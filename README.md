@@ -72,34 +72,40 @@ The API
     boolean datadog_set_background (boolean $background)
 
     // Send a timing
-    boolean datadog_timing (string $name, float $milliseconds[, float $sample_rate, [array $tags = array ()]])
+    boolean datadog_timing (string $name, float $milliseconds[, float $sample_rate = 1.0, [array $tags = array ()]])
 
     // Send a gauge
-    boolean datadog_gauge (string $name, float $value[, float $sample_rate, [array $tags = array ()]])
+    boolean datadog_gauge (string $name, float $value[, float $sample_rate = 1.0, [array $tags = array ()]])
 
     // Send a histogram
-    boolean datadog_histogram (string $name, float $value[, float $sample_rate, [array $tags = array ()]])
+    boolean datadog_histogram (string $name, float $value[, float $sample_rate = 1.0, [array $tags = array ()]])
 
     // Send a set
-    boolean datadog_set (string $name, float $value[, float $sample_rate, [array $tags = array ()]])
+    boolean datadog_set (string $name, float $value[, float $sample_rate = 1.0, [array $tags = array ()]])
 
     // Increment a named metric
-    boolean datadog_increment (string $name[, float $sample_rate, [array $tags = array ()]])
+    boolean datadog_counter_increment (string $name[, float $value = 1.0 [, float $sample_rate = 1.0, [array $tags = array ()]]])
 
     // Decrement a named metric
-    boolean datadog_decrement (string $name[, float $sample_rate, [array $tags = array ()]])
+    boolean datadog_counter_decrement (string $name[, float $value = 1.0 [, float $sample_rate = 1.0, [array $tags = array ()]]])
+
+    // Increment a named metric
+    boolean datadog_gauge_increment (string $name[, float $value = 1.0 [, float $sample_rate = 1.0, [array $tags = array ()]]])
+
+    // Decrement a named metric
+    boolean datadog_gauge_decrement (string $name[, float $value = 1.0 [, float $sample_rate = 1.0, [array $tags = array ()]]])
 
     // Begin a transaction, at the end of the transaction the following metrics are sent:
     // execution time, cpu usage (sys/user), memory usage
-    boolean datadog_transaction_begin (string $name[, float $sample_rate, [array $tags = array ()]])
+    boolean datadog_transaction_begin (string $name[, float $sample_rate = 1.0, [array $tags = array ()]])
 
-    // End a transaction
+    // End a transaction, optional parameter for discarding the results
     boolean datadog_transaction_end ([boolean $discard = false])
 
     // Sets the application name, affects metrics sent after the call
     boolean datadog_set_application (string $name)
 
-    // Discard request statistics 
+    // Discard automatic request statistics for the current request
     boolean datadog_discard_request ()    
     
 

@@ -206,10 +206,8 @@ zend_bool s_do_send (smart_str *metric TSRMLS_DC)
 }
 
 static
-void s_generate_metric (smart_str *metric, const char *sub_prefix, const char *name, double value, const char *unit, double sample_rate, zval *tags TSRMLS_DC)
+void s_metric_header (smart_str *metric, const char *sub_prefix TSRMLS_DC)
 {
-    char *buffer;
-
     // Global prefix
     if (DATADOG_G (prefix) && strlen (DATADOG_G (prefix))) {
         // Set prefix
@@ -221,15 +219,11 @@ void s_generate_metric (smart_str *metric, const char *sub_prefix, const char *n
         smart_str_appends (metric, sub_prefix);
         smart_str_appendc (metric, '.');
     }
+}
 
-    // Generate the metric
-    spprintf (&buffer, 0, "%s:%f|%s|@%.3f", name, value, unit, sample_rate);
-    smart_str_appends (metric, buffer);
-    efree (buffer);
-
-    // First append standard tags
-    smart_str_appendc (metric, '|');
-
+static
+void s_metric_footer (smart_str *metric, zval *tags TSRMLS_DC)
+{
     // Append request tags
     smart_str_appends (metric, DATADOG_G (request_tags));
 
@@ -258,6 +252,26 @@ void s_generate_metric (smart_str *metric, const char *sub_prefix, const char *n
 }
 
 static
+void s_generate_metric (smart_str *metric, const char *sub_prefix, const char *name, double value, const char *unit, double sample_rate, zval *tags TSRMLS_DC)
+{
+    char *buffer;
+
+    // First header, prefixes etc
+    s_metric_header (metric, sub_prefix TSRMLS_CC);
+
+    // Generate the metric
+    spprintf (&buffer, 0, "%s:%f|%s|@%.3f", name, value, unit, sample_rate);
+    smart_str_appends (metric, buffer);
+    efree (buffer);
+
+    // First append standard tags
+    smart_str_appendc (metric, '|');
+
+    // And footer
+    s_metric_footer (metric, tags TSRMLS_CC);
+}
+
+static
 zend_bool s_send_metric (const char *name, double value, const char *unit, double sample_rate, zval *tags TSRMLS_DC)
 {
     zend_bool rc;
@@ -276,7 +290,48 @@ zend_bool s_send_metric (const char *name, double value, const char *unit, doubl
 }
 
 static
-void s_send_transaction (php_datadog_timing_t *timing, const char *prefix, double sample_rate, zval *tags TSRMLS_DC)
+void s_generate_incr_decr (smart_str *metric, const char *name, char sign, double value, const char *unit, double sample_rate, zval *tags TSRMLS_DC)
+{
+    char *buffer;
+
+    // First header, prefixes etc
+    s_metric_header (metric, NULL TSRMLS_CC);
+
+    if (sign == '-')
+        value *= -1.0;
+
+    // Generate the metric
+    spprintf (&buffer, 0, "%s:%+f|%s|@%.3f", name, value, unit, sample_rate);
+    smart_str_appends (metric, buffer);
+    efree (buffer);
+
+    // First append standard tags
+    smart_str_appendc (metric, '|');
+
+    // And footer
+    s_metric_footer (metric, tags TSRMLS_CC);
+}
+
+static
+zend_bool s_send_incr_decr (const char *name, char sign, double value, const char *unit, double sample_rate, zval *tags TSRMLS_DC)
+{
+    zend_bool rc;
+    smart_str metric = { 0 };
+
+    if (!s_should_send (sample_rate TSRMLS_CC)) {
+        return 1;
+    }
+
+    s_generate_incr_decr (&metric, name, sign, value, unit, sample_rate, tags TSRMLS_CC);
+
+    rc = s_do_send (&metric TSRMLS_CC);
+    smart_str_free (&metric);
+
+    return rc;
+}
+
+static
+void s_send_transaction (php_datadog_timing_t *timing, const char *sub_prefix, double sample_rate, zval *tags TSRMLS_DC)
 {
     // End of request status
     struct timeval en_tv, real_tv;
@@ -292,7 +347,7 @@ void s_send_transaction (php_datadog_timing_t *timing, const char *prefix, doubl
     if (gettimeofday (&en_tv, NULL) == 0) {
         timersub (&en_tv, &(timing->st_tv), &real_tv);
 
-        s_generate_metric (&tr_end, prefix, "time.real", timeval_to_msec (real_tv), "ms", sample_rate, tags TSRMLS_CC);
+        s_generate_metric (&tr_end, sub_prefix, "time.real", timeval_to_msec (real_tv), "ms", sample_rate, tags TSRMLS_CC);
         smart_str_appendc (&tr_end, '\n');
     }
 
@@ -303,13 +358,13 @@ void s_send_transaction (php_datadog_timing_t *timing, const char *prefix, doubl
         timersub (&en_ru.ru_utime, &(timing->st_ru.ru_utime), &tv_utime);
         timersub (&en_ru.ru_stime, &(timing->st_ru.ru_stime), &tv_stime);
 
-        s_generate_metric (&tr_end, prefix, "cpu.user", timeval_to_double (tv_utime), "ms", sample_rate, tags TSRMLS_CC);
+        s_generate_metric (&tr_end, sub_prefix, "cpu.user", timeval_to_double (tv_utime), "ms", sample_rate, tags TSRMLS_CC);
         smart_str_appendc (&tr_end, '\n');
 
-        s_generate_metric (&tr_end, prefix, "cpu.sys",  timeval_to_double (tv_stime), "ms", sample_rate, tags TSRMLS_CC);
+        s_generate_metric (&tr_end, sub_prefix, "cpu.sys",  timeval_to_double (tv_stime), "ms", sample_rate, tags TSRMLS_CC);
         smart_str_appendc (&tr_end, '\n');
 
-        s_generate_metric (&tr_end, prefix, "hits",  1.0, "c", sample_rate, tags TSRMLS_CC);
+        s_generate_metric (&tr_end, sub_prefix, "hits",  1.0, "c", sample_rate, tags TSRMLS_CC);
         smart_str_appendc (&tr_end, '\n');
     }
     // Send end of request statistics
@@ -380,15 +435,15 @@ void s_datadog_metric_collection (INTERNAL_FUNCTION_PARAMETERS, const char *type
 
 // Implementation of metrics
 static
-void s_datadog_incr_decr (INTERNAL_FUNCTION_PARAMETERS, int value)
+void s_datadog_incr_decr (INTERNAL_FUNCTION_PARAMETERS, char sign, const char *unit)
 {
     char *name;
     int name_len;
     zval *tags = NULL;
     zend_bool retval;
-    double sample_rate = 1.0;
+    double value = 1.0, sample_rate = 1.0;
 
-    if (zend_parse_parameters (ZEND_NUM_ARGS() TSRMLS_CC, "s|da!", &name, &name_len, &sample_rate, &tags) != SUCCESS) {
+    if (zend_parse_parameters (ZEND_NUM_ARGS() TSRMLS_CC, "s|dda!", &name, &name_len, &value, &sample_rate, &tags) != SUCCESS) {
         return;
     }
 
@@ -396,7 +451,7 @@ void s_datadog_incr_decr (INTERNAL_FUNCTION_PARAMETERS, int value)
         RETURN_FALSE;
     }
 
-    retval = s_send_metric (name, value, "c", sample_rate, tags TSRMLS_CC);
+    retval = s_send_incr_decr (name, sign, value, unit, sample_rate, tags TSRMLS_CC);
     RETVAL_BOOL (retval);
 }
 
@@ -436,21 +491,39 @@ PHP_FUNCTION(datadog_set)
 }
 /* }}} */
 
+/* {{{ boolean datadog_counter_increment(string $name[, float $sample_rate[, array $tags = array ()]])
+    Increment a counter
+*/
+PHP_FUNCTION(datadog_counter_increment)
+{
+    s_datadog_incr_decr (INTERNAL_FUNCTION_PARAM_PASSTHRU, '+', "c");
+}
+/* }}} */
+
+/* {{{ boolean datadog_counter_decrement(string $name[, float $sample_rate[, array $tags = array ()]])
+    Decrement a counter
+*/
+PHP_FUNCTION(datadog_counter_decrement)
+{
+    s_datadog_incr_decr (INTERNAL_FUNCTION_PARAM_PASSTHRU, '-', "c");
+}
+/* }}} */
+
 /* {{{ boolean datadog_increment(string $name[, float $sample_rate[, array $tags = array ()]])
     Increment a counter
 */
-PHP_FUNCTION(datadog_increment)
+PHP_FUNCTION(datadog_gauge_increment)
 {
-    s_datadog_incr_decr (INTERNAL_FUNCTION_PARAM_PASSTHRU, 1.0);
+    s_datadog_incr_decr (INTERNAL_FUNCTION_PARAM_PASSTHRU, '+', "g");
 }
 /* }}} */
 
 /* {{{ boolean datadog_decrement(string $name[, float $sample_rate[, array $tags = array ()]])
     Decrement a counter
 */
-PHP_FUNCTION(datadog_decrement)
+PHP_FUNCTION(datadog_gauge_decrement)
 {
-    s_datadog_incr_decr (INTERNAL_FUNCTION_PARAM_PASSTHRU, -1.0);
+    s_datadog_incr_decr (INTERNAL_FUNCTION_PARAM_PASSTHRU, '-', "g");
 }
 /* }}} */
 
@@ -680,7 +753,6 @@ void s_datadog_capture_error (int type, const char *error_filename, const uint e
         s_send_metric ("error.reporting", 1.0, "c", 1.0, tags TSRMLS_CC);
         zval_ptr_dtor (&tags);
     }
-
     // pass through to the original error callback
     DATADOG_G (zend_error_cb) (type, error_filename, error_lineno, format, args);
 }
@@ -773,8 +845,10 @@ static zend_function_entry datadog_functions[] = {
     PHP_FE (datadog_gauge,             NULL)
     PHP_FE (datadog_histogram,         NULL)
     PHP_FE (datadog_set,               NULL)
-    PHP_FE (datadog_increment,         NULL)
-    PHP_FE (datadog_decrement,         NULL)
+    PHP_FE (datadog_counter_increment,         NULL)
+    PHP_FE (datadog_counter_decrement,         NULL)
+    PHP_FE (datadog_gauge_increment,         NULL)
+    PHP_FE (datadog_gauge_decrement,         NULL)
     PHP_FE (datadog_set_background,    NULL)
     PHP_FE (datadog_transaction_begin, NULL)
     PHP_FE (datadog_transaction_end,   NULL)
