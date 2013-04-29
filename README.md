@@ -75,6 +75,5 @@ Authors
 TODO
 ====
 
-* Add support for sampling / sample rate
 * Add support for sending events, currently pending on having non-blocking way to send events
 * Compile on Windows
