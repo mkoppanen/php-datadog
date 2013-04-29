@@ -86,7 +86,7 @@ char *s_request_tags (TSRMLS_D)
 
     // And request_uri
     if (SG (request_info).request_uri) {
-        if (DATADOG_G (strip_query_string) && strchr (SG (request_info).request_uri, '?')) {
+        if (DATADOG_G (strip_query) && strchr (SG (request_info).request_uri, '?')) {
             php_url *url = php_url_parse (SG (request_info).request_uri);
 
             if (url) {
@@ -584,11 +584,11 @@ PHP_FUNCTION(datadog_discard_request)
 
 
 PHP_INI_BEGIN()
-    STD_PHP_INI_ENTRY("datadog.enabled",            "1",                    PHP_INI_PERDIR, OnUpdateBool,   enabled,            zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.agent",              "udp://127.0.0.1:8125", PHP_INI_PERDIR, OnUpdateString, agent_addr,         zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.application",        "default",              PHP_INI_ALL,    OnUpdateString, app_name,           zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.prefix",             "php.",                 PHP_INI_PERDIR, OnUpdateString, prefix,             zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.strip_query_string", "1",                    PHP_INI_PERDIR, OnUpdateBool,   strip_query_string, zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.enabled",     "1",                    PHP_INI_PERDIR, OnUpdateBool,   enabled,     zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.agent",       "udp://127.0.0.1:8125", PHP_INI_PERDIR, OnUpdateString, agent_addr,  zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.application", "default",              PHP_INI_ALL,    OnUpdateString, app_name,    zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.prefix",      "php.",                 PHP_INI_PERDIR, OnUpdateString, prefix,      zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.strip_query", "1",                    PHP_INI_PERDIR, OnUpdateBool,   strip_query, zend_datadog_globals, datadog_globals)
 PHP_INI_END()
 
 static

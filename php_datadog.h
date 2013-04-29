@@ -49,7 +49,7 @@ ZEND_BEGIN_MODULE_GLOBALS(datadog)
     zend_bool background;                   /* if this execution is a background task */
     char *request_tags;                     /* tags for this request */
 
-    zend_bool strip_query_string;           /* Whether to strip query string from tags */
+    zend_bool strip_query;           /* Whether to strip query string from tags */
 
     /* The original error callback, there seems to be no typedef for this */
     void (*zend_error_cb) (int type, const char *error_filename, const uint error_lineno, const char *format, va_list args);
