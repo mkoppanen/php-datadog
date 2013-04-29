@@ -12,6 +12,33 @@ It is recommended to run:
     
 before building and using the generated package. This ensures that the version number is correctly replaced in the header files.
 
+After this the package can be installed using the following command:
+
+    pecl install datadog-<package version>.tgz
+    
+
+If 'pecl' command is not available on the system the package can be installed using the following commands:
+
+    tar xfz datadog-<package version>.tgz && cd datadog-<package version> && phpize && ./configure && make install
+
+
+After this the final step is to add ini-entry so that the datadog extension is loaded.
+
+RedHat-based systems:
+
+    echo "extension=datadog.so" > /etc/php.d/datadog.ini
+
+
+Debian (including Ubuntu etc)
+
+    echo "extension=datadog.so" > /etc/php5/conf.d//datadog.ini
+
+
+Others:
+
+    echo "extension=datadog.so" >> /path/to/php.ini
+
+
 Metrics per Request
 ===================
 
