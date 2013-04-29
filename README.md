@@ -3,6 +3,16 @@ Description
 
 PHP extension for sending metrics to http://datadoghq.com/
 
+Build
+=====
+
+It is recommended to run:
+
+    pear package
+    
+before building and using the generated package. This ensures that version number is correctly set in header files.
+
+
 Automatic tags
 ==============
 
@@ -14,20 +24,29 @@ Currently the extension will add the following automatic tags to every metric:
 The API
 =======
 
+    // Mark this run as background task. Automatically adds background:yes to all metrics
     boolean datadog_set_background (boolean $background)
 
+    // Send a timing
     boolean datadog_timing (string $name, int $milliseconds[, array $tags = array ()])
 
+    // Send a gauge
     boolean datadog_gauge (string $name, int $value[, array $tags = array ()])
 
+    // Send a histogram
     boolean datadog_histogram (string $name, int $value[, array $tags = array ()])
 
+    // Increment a named metric
     boolean datadog_increment (string $name[, array $tags = array ()])
 
+    // Decrement a named metric
     boolean datadog_decrement (string $name[, array $tags = array ()])
 
+    // Begin a transaction, at the end of the transaction the following metrics are sent:
+    // execution time, cpu usage (sys/user), memory usage
     boolean datadog_transaction_begin (string $name[, array $tags = array ()])
 
+    // End a transaction
     boolean datadog_transaction_end ([boolean $discard = false])
 
 INI settings
