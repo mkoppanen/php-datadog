@@ -195,9 +195,9 @@ zend_bool s_do_send (smart_str *metric TSRMLS_DC)
     if (!stream)
         return 0;
 
-#ifdef mikko_0
+//#ifdef mikko_0
     printf ("metric=[%s]\n", metric->c);
-#endif
+//#endif
 
     // TODO: add logic here where transaction / request stuff gets broken into less than 512 bytes
 
@@ -582,91 +582,104 @@ PHP_FUNCTION(datadog_discard_request)
 }
 /* }}} */
 
+static
+ZEND_INI_MH (OnUpdateDatadogErrorReporting)
+{
+    if (!new_value) {
+        DATADOG_G (error_reporting) = E_ALL;
+    } else {
+        DATADOG_G (error_reporting) = atoi (new_value);
+    }
+    return SUCCESS;
+}
 
 PHP_INI_BEGIN()
-    STD_PHP_INI_ENTRY("datadog.enabled",     "1",                    PHP_INI_PERDIR, OnUpdateBool,   enabled,     zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.agent",       "udp://127.0.0.1:8125", PHP_INI_PERDIR, OnUpdateString, agent_addr,  zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.application", "default",              PHP_INI_ALL,    OnUpdateString, app_name,    zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.prefix",      "php.",                 PHP_INI_PERDIR, OnUpdateString, prefix,      zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.strip_query", "1",                    PHP_INI_PERDIR, OnUpdateBool,   strip_query, zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.enabled",         "1",                    PHP_INI_PERDIR, OnUpdateBool,                  enabled,         zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.agent",           "udp://127.0.0.1:8125", PHP_INI_PERDIR, OnUpdateString,                agent_addr,      zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.application",     "default",              PHP_INI_ALL,    OnUpdateString,                app_name,        zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.prefix",          "php.",                 PHP_INI_PERDIR, OnUpdateString,                prefix,          zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.strip_query",     "1",                    PHP_INI_PERDIR, OnUpdateBool,                  strip_query,     zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.error_reporting", "E_ALL",                PHP_INI_ALL,    OnUpdateDatadogErrorReporting, error_reporting, zend_datadog_globals, datadog_globals)
 PHP_INI_END()
 
 static
 void s_datadog_capture_error (int type, const char *error_filename, const uint error_lineno, const char *format, va_list args)
 {
-    zval *tags;
-    const char *pretty_tag = NULL;
+    if (DATADOG_G (error_reporting) & type) {
+        zval *tags;
+        const char *pretty_tag = NULL;
 
-    switch (type) {
-        case E_ERROR:
-            pretty_tag = "#level:E_ERROR";
-        break;
+        switch (type) {
+            case E_ERROR:
+                pretty_tag = "#level:E_ERROR";
+            break;
 
-        case E_CORE_ERROR:
-            pretty_tag = "#level:E_CORE_ERROR";
-        break;
+            case E_CORE_ERROR:
+                pretty_tag = "#level:E_CORE_ERROR";
+            break;
 
-        case E_COMPILE_ERROR:
-            pretty_tag = "#level:E_COMPILE_ERROR";
-        break;
+            case E_COMPILE_ERROR:
+                pretty_tag = "#level:E_COMPILE_ERROR";
+            break;
 
-        case E_USER_ERROR:
-            pretty_tag = "#level:E_USER_ERROR";
-        break;
+            case E_USER_ERROR:
+                pretty_tag = "#level:E_USER_ERROR";
+            break;
 
-        case E_RECOVERABLE_ERROR:
-            pretty_tag = "#level:E_RECOVERABLE_ERROR";
-        break;
+            case E_RECOVERABLE_ERROR:
+                pretty_tag = "#level:E_RECOVERABLE_ERROR";
+            break;
 
-        case E_CORE_WARNING:
-            pretty_tag = "#level:E_CORE_WARNING";
-        break;
+            case E_CORE_WARNING:
+                pretty_tag = "#level:E_CORE_WARNING";
+            break;
 
-        case E_COMPILE_WARNING:
-            pretty_tag = "#level:E_COMPILE_WARNING";
-        break;
+            case E_COMPILE_WARNING:
+                pretty_tag = "#level:E_COMPILE_WARNING";
+            break;
 
-        case E_USER_WARNING:
-            pretty_tag = "#level:E_USER_WARNING";
-        break;
+            case E_USER_WARNING:
+                pretty_tag = "#level:E_USER_WARNING";
+            break;
 
-        case E_PARSE:
-            pretty_tag = "#level:E_PARSE";
-        break;
+            case E_PARSE:
+                pretty_tag = "#level:E_PARSE";
+            break;
 
-        case E_NOTICE:
-            pretty_tag = "#level:E_NOTICE";
-        break;
+            case E_NOTICE:
+                pretty_tag = "#level:E_NOTICE";
+            break;
 
-        case E_USER_NOTICE:
-            pretty_tag = "#level:E_USER_NOTICE";
-        break;
+            case E_USER_NOTICE:
+                pretty_tag = "#level:E_USER_NOTICE";
+            break;
 
-        case E_STRICT:
-            pretty_tag = "#level:E_STRICT";
-        break;
+            case E_STRICT:
+                pretty_tag = "#level:E_STRICT";
+            break;
 
-        case E_DEPRECATED:
-            pretty_tag = "#level:E_DEPRECATED";
-        break;
+            case E_DEPRECATED:
+                pretty_tag = "#level:E_DEPRECATED";
+            break;
 
-        case E_USER_DEPRECATED:
-            pretty_tag = "#level:E_USER_DEPRECATED";
-        break;
+            case E_USER_DEPRECATED:
+                pretty_tag = "#level:E_USER_DEPRECATED";
+            break;
 
-        default:
-            pretty_tag = "#level:UNKNOWN";
-        break;
+            default:
+                pretty_tag = "#level:UNKNOWN";
+            break;
+        }
+
+        // Create a gauge out of the errors
+        // TODO: add a threshold here after which move into sampling
+        MAKE_STD_ZVAL (tags);
+        ZVAL_STRING (tags, pretty_tag, 1);
+
+        TSRMLS_FETCH ();
+        s_send_metric ("error.reporting", 1.0, "c", 1.0, tags TSRMLS_CC);
+        zval_ptr_dtor (&tags);
     }
-
-    // Create a gauge out of the errors
-    // TODO: add a threshold here after which move into sampling
-    MAKE_STD_ZVAL (tags);
-    ZVAL_STRING (tags, pretty_tag, 1);
-
-    TSRMLS_FETCH ();
-    s_send_metric ("error.reporting", 1.0, "c", 1.0, tags TSRMLS_CC);
-    zval_ptr_dtor (&tags);
 
     // pass through to the original error callback
     DATADOG_G (zend_error_cb) (type, error_filename, error_lineno, format, args);

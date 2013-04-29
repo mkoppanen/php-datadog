@@ -23,7 +23,9 @@ The following metrics are recorded for every request:
 * {datadog.prefix}.request.mem.peak / g
 * {datadog.prefix}.request.hits / c
 
+When ever a PHP error happens (E_PARSE, E_ERROR etc) the following counter is incremented:
 
+* {datadog.prefix}.error.reporting
 
 Automatic tags
 ==============
@@ -75,13 +77,14 @@ The API
 INI settings
 ============
 
-| Name                 | Default value          | Scope          | Description                                                    |
-|----------------------|------------------------|----------------|----------------------------------------------------------------|
-| datadog.enabled      | true                   | PHP_INI_PERDIR | Whether to enable datadog monitoring                           |
-| datadog.agent        | "udp://127.0.0.1:8125" | PHP_INI_PERDIR | Address of the dd-agent                                        |
-| datadog.application  | "default"              | PHP_INI_PERDIR | Application name to use in the automatic tag                   |
-| datadog.prefix       | "php."                 | PHP_INI_PERDIR | Prefix to use for PHP metrics                                  |
-| datadog.strip_query  | true                   | PHP_INI_PERDIR | Strip query string from request_uri tag                        |
+| Name                     | Type      | Default value          | Scope          | Description                                                    |
+|------------------------- |-----------|------------------------|----------------|----------------------------------------------------------------|
+| datadog.enabled          | boolean   | true                   | PHP_INI_PERDIR | Whether to enable datadog monitoring                           |
+| datadog.agent            | string    | "udp://127.0.0.1:8125" | PHP_INI_PERDIR | Address of the dd-agent                                        |
+| datadog.application      | string    | "default"              | PHP_INI_ALL    | Application name to use in the automatic tag                   |
+| datadog.prefix           | string    | "php."                 | PHP_INI_PERDIR | Prefix to use for PHP metrics                                  |
+| datadog.strip_query      | boolean   | true                   | PHP_INI_PERDIR | Strip query string from request_uri tag                        |
+| datadog.error_reporting  | integer   | E_ALL                  | PHP_INI_ALL    | Level of errors to report on the automatic error reporting     |
 
 Datadog extension monitors request times, request memory and CPU usage and rate of errors. Each PHP error will increment counter
 called "error.reporting" (by default it will be prefixed with php.) and sets the level of the error as a tag for the metric.
