@@ -21,6 +21,7 @@ Currently the extension will add the following automatic tags to every metric:
     application:{datadog.application}
     filename:{basename PATH_TRANSLATED}
 
+
 The API
 =======
 
@@ -48,6 +49,7 @@ The API
 
     // End a transaction
     boolean datadog_transaction_end ([boolean $discard = false])
+
 
 INI settings
 ============
