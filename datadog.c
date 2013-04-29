@@ -380,7 +380,7 @@ void s_datadog_incr_decr (INTERNAL_FUNCTION_PARAMETERS, int value)
     RETVAL_BOOL (retval);
 }
 
-/* {{{ boolean datadog_timing(string $name, int $milliseconds[, float $sample_rate[, array $tags = array ()]])
+/* {{{ boolean datadog_timing(string $name, float $milliseconds[, float $sample_rate[, array $tags = array ()]])
     Create a timing for a specific entry
 */
 PHP_FUNCTION(datadog_timing)
@@ -389,7 +389,7 @@ PHP_FUNCTION(datadog_timing)
 }
 /* }}} */
 
-/* {{{ boolean datadog_gauge(string $name, int $value[, float $sample_rate[, array $tags = array ()]])
+/* {{{ boolean datadog_gauge(string $name, float $value[, float $sample_rate[, array $tags = array ()]])
     Create a gauge for a specific entry
 */
 PHP_FUNCTION(datadog_gauge)
@@ -398,12 +398,21 @@ PHP_FUNCTION(datadog_gauge)
 }
 /* }}} */
 
-/* {{{ boolean datadog_histogram(string $name, int $value[, float $sample_rate[, array $tags = array ()]])
+/* {{{ boolean datadog_histogram(string $name, float $value[, float $sample_rate[, array $tags = array ()]])
     Create a history for a specific entry
 */
 PHP_FUNCTION(datadog_histogram)
 {
     s_datadog_metric_collection (INTERNAL_FUNCTION_PARAM_PASSTHRU, "h");
+}
+/* }}} */
+
+/* {{{ boolean datadog_set(string $name, float $value[, float $sample_rate[, array $tags = array ()]])
+  
+*/
+PHP_FUNCTION(datadog_set)
+{
+    s_datadog_metric_collection (INTERNAL_FUNCTION_PARAM_PASSTHRU, "s");
 }
 /* }}} */
 
@@ -686,6 +695,7 @@ static zend_function_entry datadog_functions[] = {
     PHP_FE (datadog_timing,            NULL)
     PHP_FE (datadog_gauge,             NULL)
     PHP_FE (datadog_histogram,         NULL)
+    PHP_FE (datadog_set,               NULL)
     PHP_FE (datadog_increment,         NULL)
     PHP_FE (datadog_decrement,         NULL)
     PHP_FE (datadog_set_background,    NULL)
