@@ -84,10 +84,6 @@ char *s_request_tags (TSRMLS_D)
     char *retval;
     smart_str tags = {0};
 
-    // Add path_translated
-    if (SG (request_info).path_translated)
-        s_smart_str_append_tag (&tags, "path_translated", SG (request_info).path_translated);
-
     // And request_uri
     if (SG (request_info).request_uri) {
         if (DATADOG_G (strip_query_string) && strchr (SG (request_info).request_uri, '?')) {
