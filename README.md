@@ -12,6 +12,18 @@ It is recommended to run:
     
 before building and using the generated package. This ensures that the version number is correctly replaced in the header files.
 
+Metrics per Request
+===================
+
+The following metrics are recorded for every request:
+
+* {datadog.prefix}.request.time.real / ms
+* {datadog.prefix}.request.cpu.user / ms
+* {datadog.prefix}.request.cpu.sys / ms
+* {datadog.prefix}.request.mem.peak / g
+* {datadog.prefix}.request.hits / c
+
+
 
 Automatic tags
 ==============
