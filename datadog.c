@@ -495,7 +495,7 @@ PHP_FUNCTION(datadog_transaction_end)
         s_send_transaction (DATADOG_G (transaction)->timing, "transaction", DATADOG_G (transaction)->sample_rate, DATADOG_G (transaction)->tags TSRMLS_CC);
 
         memory_usage = (zend_memory_usage (1 TSRMLS_CC) - DATADOG_G (transaction)->st_mem);
-        s_send_metric ("transaction.memory.usage", memory_usage, "g", DATADOG_G (transaction)->sample_rate, DATADOG_G (transaction)->tags TSRMLS_CC);
+        s_send_metric ("transaction.mem.used", memory_usage, "g", DATADOG_G (transaction)->sample_rate, DATADOG_G (transaction)->tags TSRMLS_CC);
     }
 
     Z_DELREF_P (DATADOG_G (transaction)->tags);
@@ -629,7 +629,7 @@ PHP_RSHUTDOWN_FUNCTION(datadog)
             long peak_memory = zend_memory_peak_usage (1 TSRMLS_CC);
 
             s_send_transaction (timing, "request", 1.0, NULL TSRMLS_CC);
-            s_send_metric ("request.memory.peak", peak_memory, "g", 1.0, NULL TSRMLS_CC);
+            s_send_metric ("request.mem.peak", peak_memory, "g", 1.0, NULL TSRMLS_CC);
             pefree (timing, 1);
         }
 
