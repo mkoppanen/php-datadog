@@ -83,6 +83,12 @@ char *s_request_tags (TSRMLS_D)
     char *retval;
     smart_str tags = {0};
 
+    // Requested uri
+    if (SG (request_info).request_uri) {
+        s_smart_str_append_tag (&tags, "request_uri", SG (request_info).request_uri);
+    }
+
+    // Requested filename
     if (SG (request_info).path_translated) {
         char *filename;
         size_t filename_len;
@@ -290,6 +296,9 @@ void s_send_transaction (php_datadog_timing_t *timing, const char *prefix, doubl
         smart_str_appendc (&tr_end, '\n');
 
         s_generate_metric (&tr_end, prefix, "cpu.sys",  timeval_to_double (tv_stime), "ms", sample_rate, tags TSRMLS_CC);
+        smart_str_appendc (&tr_end, '\n');
+
+        s_generate_metric (&tr_end, prefix, "hits",  1.0, "c", sample_rate, tags TSRMLS_CC);
         smart_str_appendc (&tr_end, '\n');
     }
     // Send end of request statistics
