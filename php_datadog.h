@@ -31,7 +31,7 @@
 
 #include "Zend/zend.h"
 
-#define PHP_DATADOG_EXTVER "0.1.0-dev"
+#define PHP_DATADOG_EXTVER "@PACKAGE_VERSION@"
 
 // Opaque struct for the timing info
 typedef struct _php_datadog_timing_t php_datadog_timing_t;

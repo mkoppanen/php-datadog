@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<package packagerversion="1.9.1" version="2.0" xmlns="http://pear.php.net/dtd/package-2.0" xmlns:tasks="http://pear.php.net/dtd/tasks-1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://pear.php.net/dtd/tasks-1.0 http://pear.php.net/dtd/tasks-1.0.xsd http://pear.php.net/dtd/package-2.0 http://pear.php.net/dtd/package-2.0.xsd">
+ <name>datadog</name>
+ <channel>pecl.php.net</channel>
+ <summary>Datadog monitoring extension</summary>
+ <description>Monitors the PHP stack</description>
+ <lead>
+  <name>Mikko Koppanen</name>
+  <user>mkoppanen</user>
+  <email>mikko@lentor.io</email>
+  <active>yes</active>
+ </lead>
+ <date>2013-04-29</date>
+ <time>00:17:32</time>
+ <version>
+  <release>0.1.0</release>
+  <api>0.1.0</api>
+ </version>
+ <stability>
+  <release>beta</release>
+  <api>beta</api>
+ </stability>
+ <license uri="http://www.php.net/license">PHP License</license>
+ <notes>
+- Initial release
+ </notes>
+ <contents>
+  <dir name="/">
+   <file md5sum="12815d7796ffae7849ef8a7752250e94" name="config.m4" role="src" />
+   <file md5sum="909f8c5f63954d112661c90f6f92e080" name="datadog.spec" role="src">
+    <tasks:replace from="@PACKAGE_VERSION@" to="version" type="package-info" />
+   </file>
+   <file md5sum="a37f57a5e51773a3223694a912b7d11b" name="php_datadog.h" role="src">
+    <tasks:replace from="@PACKAGE_VERSION@" to="version" type="package-info" />
+   </file>
+   <file md5sum="06abb6ee8b039eff75331de6a05517a2" name="datadog.c" role="src" />
+   <file md5sum="817db117f3ec7cca45e57ed49a75b6b3" name="README.md" role="doc" />
+  </dir>
+ </contents>
+ <dependencies>
+  <required>
+   <php>
+    <min>5.3.0</min>
+   </php>
+   <pearinstaller>
+    <min>1.4.0</min>
+   </pearinstaller>
+  </required>
+ </dependencies>
+ <providesextension>datadog</providesextension>
+ <extsrcrelease />
+</package>
