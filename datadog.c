@@ -19,6 +19,7 @@
 #include "php_datadog.h"
 
 #include "php_ini.h"
+#include "ext/standard/url.h"
 #include "ext/standard/info.h"
 #include "ext/standard/php_smart_str.h"
 #include "ext/standard/php_string.h"
@@ -83,9 +84,22 @@ char *s_request_tags (TSRMLS_D)
     char *retval;
     smart_str tags = {0};
 
-    // Requested uri
+    // Add path_translated
+    if (SG (request_info).path_translated)
+        s_smart_str_append_tag (&tags, "path_translated", SG (request_info).path_translated);
+
+    // And request_uri
     if (SG (request_info).request_uri) {
-        s_smart_str_append_tag (&tags, "request_uri", SG (request_info).request_uri);
+        if (DATADOG_G (strip_query_string) && strchr (SG (request_info).request_uri, '?')) {
+            php_url *url = php_url_parse (SG (request_info).request_uri);
+
+            if (url) {
+                s_smart_str_append_tag (&tags, "request_uri", url->path);
+                php_url_free (url);
+            }
+        } else {
+            s_smart_str_append_tag (&tags, "request_uri", SG (request_info).request_uri);
+        }
     }
 
     // Requested filename
@@ -528,10 +542,11 @@ PHP_FUNCTION(datadog_transaction_end)
 /* }}} */
 
 PHP_INI_BEGIN()
-    STD_PHP_INI_ENTRY("datadog.enabled",     "1",                    PHP_INI_PERDIR, OnUpdateBool,   enabled,    zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.agent",       "udp://127.0.0.1:8125", PHP_INI_PERDIR, OnUpdateString, agent_addr, zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.application", "default",              PHP_INI_PERDIR, OnUpdateString, app_name,   zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.prefix",      "php.",                 PHP_INI_PERDIR, OnUpdateString, prefix,     zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.enabled",            "1",                    PHP_INI_PERDIR, OnUpdateBool,   enabled,            zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.agent",              "udp://127.0.0.1:8125", PHP_INI_PERDIR, OnUpdateString, agent_addr,         zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.application",        "default",              PHP_INI_PERDIR, OnUpdateString, app_name,           zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.prefix",             "php.",                 PHP_INI_PERDIR, OnUpdateString, prefix,             zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.strip_query_string", "1",                    PHP_INI_PERDIR, OnUpdateBool,   strip_query_string, zend_datadog_globals, datadog_globals)
 PHP_INI_END()
 
 static
@@ -685,7 +700,7 @@ PHP_MSHUTDOWN_FUNCTION(datadog)
 
 PHP_GINIT_FUNCTION(datadog)
 {
-    datadog_globals->background     = 0;
+    datadog_globals->background  = 0;
     datadog_globals->transaction = NULL;
 }
 
