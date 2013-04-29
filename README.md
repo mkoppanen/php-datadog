@@ -29,23 +29,23 @@ The API
     boolean datadog_set_background (boolean $background)
 
     // Send a timing
-    boolean datadog_timing (string $name, int $milliseconds[, array $tags = array ()])
+    boolean datadog_timing (string $name, int $milliseconds[, float $sample_rate, [array $tags = array ()]])
 
     // Send a gauge
-    boolean datadog_gauge (string $name, int $value[, array $tags = array ()])
+    boolean datadog_gauge (string $name, int $value[, float $sample_rate, [array $tags = array ()]])
 
     // Send a histogram
-    boolean datadog_histogram (string $name, int $value[, array $tags = array ()])
+    boolean datadog_histogram (string $name, int $value[, float $sample_rate, [array $tags = array ()]])
 
     // Increment a named metric
-    boolean datadog_increment (string $name[, array $tags = array ()])
+    boolean datadog_increment (string $name[, float $sample_rate, [array $tags = array ()]])
 
     // Decrement a named metric
-    boolean datadog_decrement (string $name[, array $tags = array ()])
+    boolean datadog_decrement (string $name[, float $sample_rate, [array $tags = array ()]])
 
     // Begin a transaction, at the end of the transaction the following metrics are sent:
     // execution time, cpu usage (sys/user), memory usage
-    boolean datadog_transaction_begin (string $name[, array $tags = array ()])
+    boolean datadog_transaction_begin (string $name[, float $sample_rate, [array $tags = array ()]])
 
     // End a transaction
     boolean datadog_transaction_end ([boolean $discard = false])

@@ -22,6 +22,7 @@
 #include "ext/standard/info.h"
 #include "ext/standard/php_smart_str.h"
 #include "ext/standard/php_string.h"
+#include "ext/standard/php_rand.h"
 #include "SAPI.h"
 
 // getrusage
@@ -55,7 +56,14 @@ struct _php_datadog_transaction_t {
     php_datadog_timing_t *timing;
     zval *tags;
     size_t st_mem;
+    double sample_rate;
 };
+
+static
+int s_should_send (double sample_rate TSRMLS_DC)
+{
+    return ((php_rand (TSRMLS_C) / PHP_RAND_MAX) <= sample_rate);
+}
 
 static
 void s_smart_str_append_tag (smart_str *str, const char *name, const char *value)
@@ -183,8 +191,10 @@ zend_bool s_do_send (smart_str *metric TSRMLS_DC)
 }
 
 static
-void s_generate_metric (smart_str *metric, const char *prefix, const char *name, long value, const char *unit, zval *tags TSRMLS_DC)
+void s_generate_metric (smart_str *metric, const char *sub_prefix, const char *name, long value, const char *unit, double sample_rate, zval *tags TSRMLS_DC)
 {
+    char *buffer;
+
     // Global prefix
     if (DATADOG_G (prefix) && strlen (DATADOG_G (prefix))) {
         // Set prefix
@@ -192,17 +202,15 @@ void s_generate_metric (smart_str *metric, const char *prefix, const char *name,
     }
 
     // sub-prefix, makes using same func from request and transaction easier
-    if (prefix) {
-        smart_str_appends (metric, prefix);
+    if (sub_prefix) {
+        smart_str_appends (metric, sub_prefix);
         smart_str_appendc (metric, '.');
     }
 
-    smart_str_appends (metric, name);
-    smart_str_appendc (metric, ':');
-
-    smart_str_append_long (metric, value);
-    smart_str_appendc (metric, '|');
-    smart_str_appends (metric, unit);
+    // Generate the metric
+    spprintf (&buffer, 0, "%s:%ld|%s|@%.3f", name, value, unit, sample_rate);
+    smart_str_appends (metric, buffer);
+    efree (buffer);
 
     // First append standard tags
     smart_str_appendc (metric, '|');
@@ -212,7 +220,7 @@ void s_generate_metric (smart_str *metric, const char *prefix, const char *name,
 
     // Background job?
     if (DATADOG_G (background))
-        s_smart_str_append_tag (&tags, "background", "yes");
+        s_smart_str_append_tag (metric, "background", "yes");
 
     // And user tags
     if (tags) {
@@ -231,11 +239,16 @@ void s_generate_metric (smart_str *metric, const char *prefix, const char *name,
 }
 
 static
-zend_bool s_send_metric (const char *name, long value, const char *unit, zval *tags TSRMLS_DC)
+zend_bool s_send_metric (const char *name, long value, const char *unit, double sample_rate, zval *tags TSRMLS_DC)
 {
     zend_bool rc;
     smart_str metric = { 0 };
-    s_generate_metric (&metric, NULL, name, value, unit, tags TSRMLS_CC);
+
+    if (!s_should_send (sample_rate TSRMLS_CC)) {
+        return 1;
+    }
+
+    s_generate_metric (&metric, NULL, name, value, unit, sample_rate, tags TSRMLS_CC);
 
     rc = s_do_send (&metric TSRMLS_CC);
     smart_str_free (&metric);
@@ -244,18 +257,23 @@ zend_bool s_send_metric (const char *name, long value, const char *unit, zval *t
 }
 
 static
-void s_send_transaction (php_datadog_timing_t *timing, const char *prefix, zval *tags TSRMLS_DC)
+void s_send_transaction (php_datadog_timing_t *timing, const char *prefix, double sample_rate, zval *tags TSRMLS_DC)
 {
     // End of request status
     struct timeval en_tv, real_tv;
     struct rusage  en_ru;
     smart_str tr_end = {0};
 
+    // Check sampling rate
+    if (!s_should_send (sample_rate TSRMLS_CC)) {
+        return;
+    }
+
     // Amount in milliseconds used
     if (gettimeofday (&en_tv, NULL) == 0) {
         timersub (&en_tv, &(timing->st_tv), &real_tv);
 
-        s_generate_metric (&tr_end, prefix, "time.real", timeval_to_msec (real_tv), "ms", tags TSRMLS_CC);
+        s_generate_metric (&tr_end, prefix, "time.real", timeval_to_msec (real_tv), "ms", sample_rate, tags TSRMLS_CC);
         smart_str_appendc (&tr_end, '\n');
     }
 
@@ -266,10 +284,10 @@ void s_send_transaction (php_datadog_timing_t *timing, const char *prefix, zval 
         timersub (&en_ru.ru_utime, &(timing->st_ru.ru_utime), &tv_utime);
         timersub (&en_ru.ru_stime, &(timing->st_ru.ru_stime), &tv_stime);
 
-        s_generate_metric (&tr_end, prefix, "time.user", timeval_to_msec (tv_utime), "ms", tags TSRMLS_CC);
+        s_generate_metric (&tr_end, prefix, "time.user", timeval_to_msec (tv_utime), "ms", sample_rate, tags TSRMLS_CC);
         smart_str_appendc (&tr_end, '\n');
 
-        s_generate_metric (&tr_end, prefix, "time.sys",  timeval_to_msec (tv_stime), "ms", tags TSRMLS_CC);
+        s_generate_metric (&tr_end, prefix, "time.sys",  timeval_to_msec (tv_stime), "ms", sample_rate, tags TSRMLS_CC);
         smart_str_appendc (&tr_end, '\n');
     }
     // Send end of request statistics
@@ -324,8 +342,9 @@ void s_datadog_metric_collection (INTERNAL_FUNCTION_PARAMETERS, const char *type
     long value;
     zval *tags = NULL;
     zend_bool retval;
+    double sample_rate = 1.0;
 
-    if (zend_parse_parameters (ZEND_NUM_ARGS() TSRMLS_CC, "sl|a!", &name, &name_len, &value, &tags) != SUCCESS) {
+    if (zend_parse_parameters (ZEND_NUM_ARGS() TSRMLS_CC, "sl|da!", &name, &name_len, &value, &sample_rate, &tags) != SUCCESS) {
         return;
     }
 
@@ -333,7 +352,7 @@ void s_datadog_metric_collection (INTERNAL_FUNCTION_PARAMETERS, const char *type
         RETURN_FALSE;
     }
 
-    retval = s_send_metric (name, value, type, tags TSRMLS_CC);
+    retval = s_send_metric (name, value, type, sample_rate, tags TSRMLS_CC);
     RETVAL_BOOL (retval);
 }
 
@@ -345,8 +364,9 @@ void s_datadog_incr_decr (INTERNAL_FUNCTION_PARAMETERS, int value)
     int name_len;
     zval *tags = NULL;
     zend_bool retval;
+    double sample_rate = 1.0;
 
-    if (zend_parse_parameters (ZEND_NUM_ARGS() TSRMLS_CC, "s|a!", &name, &name_len, &tags) != SUCCESS) {
+    if (zend_parse_parameters (ZEND_NUM_ARGS() TSRMLS_CC, "s|da!", &name, &name_len, &sample_rate, &tags) != SUCCESS) {
         return;
     }
 
@@ -354,11 +374,11 @@ void s_datadog_incr_decr (INTERNAL_FUNCTION_PARAMETERS, int value)
         RETURN_FALSE;
     }
 
-    retval = s_send_metric (name, value, "c", tags TSRMLS_CC);
+    retval = s_send_metric (name, value, "c", sample_rate, tags TSRMLS_CC);
     RETVAL_BOOL (retval);
 }
 
-/* {{{ boolean datadog_timing(string $name, int $milliseconds[, array $tags = array ()])
+/* {{{ boolean datadog_timing(string $name, int $milliseconds[, float $sample_rate[, array $tags = array ()]])
     Create a timing for a specific entry
 */
 PHP_FUNCTION(datadog_timing)
@@ -367,7 +387,7 @@ PHP_FUNCTION(datadog_timing)
 }
 /* }}} */
 
-/* {{{ boolean datadog_gauge(string $name, int $value[, array $tags = array ()])
+/* {{{ boolean datadog_gauge(string $name, int $value[, float $sample_rate[, array $tags = array ()]])
     Create a gauge for a specific entry
 */
 PHP_FUNCTION(datadog_gauge)
@@ -376,7 +396,7 @@ PHP_FUNCTION(datadog_gauge)
 }
 /* }}} */
 
-/* {{{ boolean datadog_histogram(string $name, int $value[, array $tags = array ()])
+/* {{{ boolean datadog_histogram(string $name, int $value[, float $sample_rate[, array $tags = array ()]])
     Create a history for a specific entry
 */
 PHP_FUNCTION(datadog_histogram)
@@ -385,7 +405,7 @@ PHP_FUNCTION(datadog_histogram)
 }
 /* }}} */
 
-/* {{{ boolean datadog_increment(string $name[, array $tags = array ()])
+/* {{{ boolean datadog_increment(string $name[, float $sample_rate[, array $tags = array ()]])
     Increment a counter
 */
 PHP_FUNCTION(datadog_increment)
@@ -394,7 +414,7 @@ PHP_FUNCTION(datadog_increment)
 }
 /* }}} */
 
-/* {{{ boolean datadog_decrement(string $name[, array $tags = array ()])
+/* {{{ boolean datadog_decrement(string $name[, float $sample_rate[, array $tags = array ()]])
     Decrement a counter
 */
 PHP_FUNCTION(datadog_decrement)
@@ -403,16 +423,17 @@ PHP_FUNCTION(datadog_decrement)
 }
 /* }}} */
 
-/* {{{ boolean datadog_transaction_begin(string $name[, array $tags = array ()])
+/* {{{ boolean datadog_transaction_begin(string $name[, float $sample_rate[, array $tags = array ()]])
     Create a timing for a specific transaction
 */
 PHP_FUNCTION(datadog_transaction_begin)
 {
     char *name;
     int name_len;
+    double sample_rate = 1.0;
     zval *tags = NULL;
 
-    if (zend_parse_parameters (ZEND_NUM_ARGS() TSRMLS_CC, "s|a!", &name, &name_len, &tags) != SUCCESS) {
+    if (zend_parse_parameters (ZEND_NUM_ARGS() TSRMLS_CC, "s|da!", &name, &name_len, &sample_rate, &tags) != SUCCESS) {
         return;
     }
 
@@ -426,9 +447,11 @@ PHP_FUNCTION(datadog_transaction_begin)
     }
 
     // Allocate new transaction
-    DATADOG_G (transaction)         = pemalloc (sizeof (php_datadog_transaction_t), 1);
-    DATADOG_G (transaction)->timing = s_datadog_timing (TSRMLS_C);
-    DATADOG_G (transaction)->st_mem = zend_memory_usage (1 TSRMLS_CC);
+    // TODO: move sample_rate checking here so that we don't need to do this all on no match
+    DATADOG_G (transaction)              = pemalloc (sizeof (php_datadog_transaction_t), 1);
+    DATADOG_G (transaction)->timing      = s_datadog_timing (TSRMLS_C);
+    DATADOG_G (transaction)->st_mem      = zend_memory_usage (1 TSRMLS_CC);
+    DATADOG_G (transaction)->sample_rate = sample_rate;
 
     MAKE_STD_ZVAL (DATADOG_G (transaction)->tags);
 
@@ -467,10 +490,10 @@ PHP_FUNCTION(datadog_transaction_end)
 
     if (!discard) {
         long memory_usage;
-        s_send_transaction (DATADOG_G (transaction)->timing, "transaction", DATADOG_G (transaction)->tags TSRMLS_CC);
+        s_send_transaction (DATADOG_G (transaction)->timing, "transaction", DATADOG_G (transaction)->sample_rate, DATADOG_G (transaction)->tags TSRMLS_CC);
 
         memory_usage = (zend_memory_usage (1 TSRMLS_CC) - DATADOG_G (transaction)->st_mem);
-        s_send_metric ("transaction.memory.usage", memory_usage, "g", DATADOG_G (transaction)->tags TSRMLS_CC);
+        s_send_metric ("transaction.memory.usage", memory_usage, "g", DATADOG_G (transaction)->sample_rate, DATADOG_G (transaction)->tags TSRMLS_CC);
     }
 
     Z_DELREF_P (DATADOG_G (transaction)->tags);
@@ -565,7 +588,7 @@ void s_datadog_capture_error (int type, const char *error_filename, const uint e
     ZVAL_STRING (tags, pretty_tag, 1);
 
     TSRMLS_FETCH ();
-    s_send_metric ("error.reporting", 1, "c", tags TSRMLS_CC);
+    s_send_metric ("error.reporting", 1, "c", 1.0, tags TSRMLS_CC);
     zval_ptr_dtor (&tags);
 
     // pass through to the original error callback
@@ -575,6 +598,7 @@ void s_datadog_capture_error (int type, const char *error_filename, const uint e
 static
 void s_datadog_override_error_handler (TSRMLS_D) 
 {
+    // TODO: set_error_handler will override this, will need to add some code for handling that
     DATADOG_G (zend_error_cb) = zend_error_cb;
     zend_error_cb = &s_datadog_capture_error;
 }
@@ -600,11 +624,10 @@ PHP_RSHUTDOWN_FUNCTION(datadog)
         php_datadog_timing_t *timing = DATADOG_G (timing);
 
         if (timing) {
-            s_send_transaction (timing, "request", NULL TSRMLS_CC);
-
             long peak_memory = zend_memory_peak_usage (1 TSRMLS_CC);
-            s_send_metric ("request.memory.peak", peak_memory, "g", NULL TSRMLS_CC);
 
+            s_send_transaction (timing, "request", 1.0, NULL TSRMLS_CC);
+            s_send_metric ("request.memory.peak", peak_memory, "g", 1.0, NULL TSRMLS_CC);
             pefree (timing, 1);
         }
 
