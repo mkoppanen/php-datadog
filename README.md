@@ -27,6 +27,8 @@ When ever a PHP error happens (E_PARSE, E_ERROR etc) the following counter is in
 
 * {datadog.prefix}.error.reporting
 
+the metric also includes tag "level", for example "level:E_PARSE"
+
 Automatic tags
 ==============
 
