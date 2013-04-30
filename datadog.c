@@ -41,7 +41,7 @@
     } while (0)
 # endif /* ifndef timersub */
 
-#define timeval_to_msec(_my_tv) ((_my_tv.tv_sec * 1000) + (_my_tv.tv_usec / 1000))
+#define timeval_to_msec(_my_tv) ((_my_tv.tv_sec * 1000.0) + (_my_tv.tv_usec / 1000.0))
 
 #define timeval_to_double(_my_tv) (double)(_my_tv).tv_sec + ((double)(_my_tv).tv_usec / 1000000.0)
 
@@ -63,7 +63,7 @@ struct _php_datadog_transaction_t {
 };
 
 static
-int s_should_send (double sample_rate TSRMLS_DC)
+int s_check_sample_rate (double sample_rate TSRMLS_DC)
 {
     return ((php_rand (TSRMLS_C) / PHP_RAND_MAX) <= sample_rate);
 }
@@ -277,7 +277,7 @@ zend_bool s_send_metric (const char *name, double value, const char *unit, doubl
     zend_bool rc;
     smart_str metric = { 0 };
 
-    if (!s_should_send (sample_rate TSRMLS_CC)) {
+    if (!s_check_sample_rate (sample_rate TSRMLS_CC)) {
         return 1;
     }
 
@@ -318,7 +318,7 @@ zend_bool s_send_incr_decr (const char *name, char sign, double value, const cha
     zend_bool rc;
     smart_str metric = { 0 };
 
-    if (!s_should_send (sample_rate TSRMLS_CC)) {
+    if (!s_check_sample_rate (sample_rate TSRMLS_CC)) {
         return 1;
     }
 
@@ -339,7 +339,7 @@ void s_send_transaction (php_datadog_timing_t *timing, const char *sub_prefix, d
     smart_str tr_end = {0};
 
     // Check sampling rate
-    if (!s_should_send (sample_rate TSRMLS_CC)) {
+    if (!s_check_sample_rate (sample_rate TSRMLS_CC)) {
         return;
     }
 
@@ -628,7 +628,7 @@ PHP_FUNCTION(datadog_set_application)
     }
 
     // Update request tags
-    if (zend_alter_ini_entry ("datadog.application", sizeof ("datadog.application"), name, name_len, PHP_INI_USER, PHP_INI_STAGE_RUNTIME TSRMLS_CC) == FAILURE) {
+    if (zend_alter_ini_entry ("datadog.application", sizeof ("datadog.application"), name, name_len, PHP_INI_USER, PHP_INI_STAGE_RUNTIME) == FAILURE) {
         RETURN_FALSE;
     }
     RETURN_TRUE;
@@ -667,17 +667,21 @@ ZEND_INI_MH (OnUpdateDatadogErrorReporting)
 }
 
 PHP_INI_BEGIN()
-    STD_PHP_INI_ENTRY("datadog.enabled",         "1",                    PHP_INI_PERDIR, OnUpdateBool,                  enabled,         zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.agent",           "udp://127.0.0.1:8125", PHP_INI_PERDIR, OnUpdateString,                agent_addr,      zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.application",     "default",              PHP_INI_ALL,    OnUpdateString,                app_name,        zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.prefix",          "php.",                 PHP_INI_PERDIR, OnUpdateString,                prefix,          zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.strip_query",     "1",                    PHP_INI_PERDIR, OnUpdateBool,                  strip_query,     zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.error_reporting", "E_ALL",                PHP_INI_ALL,    OnUpdateDatadogErrorReporting, error_reporting, zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.enabled",           "1",                    PHP_INI_PERDIR, OnUpdateBool,                  enabled,           zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.agent",             "udp://127.0.0.1:8125", PHP_INI_PERDIR, OnUpdateString,                agent_addr,        zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.application",       "default",              PHP_INI_ALL,    OnUpdateString,                app_name,          zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.prefix",            "php.",                 PHP_INI_PERDIR, OnUpdateString,                prefix,            zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.strip_query",       "1",                    PHP_INI_PERDIR, OnUpdateBool,                  strip_query,       zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.error_reporting",   "E_ALL",                PHP_INI_ALL,    OnUpdateDatadogErrorReporting, error_reporting,   zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.function_sampling", "0",                    PHP_INI_PERDIR, OnUpdateBool,                  function_sampling, zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.func_sample_rate",  "0.5",                  PHP_INI_ALL,    OnUpdateReal,                  func_sample_rate,  zend_datadog_globals, datadog_globals)
 PHP_INI_END()
 
 static
 void s_datadog_capture_error (int type, const char *error_filename, const uint error_lineno, const char *format, va_list args)
 {
+    TSRMLS_FETCH ();
+
     if (DATADOG_G (error_reporting) & type) {
         zval *tags;
         const char *pretty_tag = NULL;
@@ -749,7 +753,6 @@ void s_datadog_capture_error (int type, const char *error_filename, const uint e
         MAKE_STD_ZVAL (tags);
         ZVAL_STRING (tags, pretty_tag, 1);
 
-        TSRMLS_FETCH ();
         s_send_metric ("error.reporting", 1.0, "c", 1.0, tags TSRMLS_CC);
         zval_ptr_dtor (&tags);
     }
@@ -765,6 +768,100 @@ void s_datadog_override_error_handler (TSRMLS_D)
     zend_error_cb = &s_datadog_capture_error;
 }
 
+typedef void (*datadog_handler) (INTERNAL_FUNCTION_PARAMETERS);
+
+typedef struct _php_datadog_func_entry_t {
+    const char *extension;
+    const char *func_name;
+    datadog_handler handler;
+} php_datadog_func_entry_t;
+
+static
+php_datadog_func_entry_t s_monitored_funcs [] = {
+    { "mysql",     "mysql_connect",        NULL },
+    { "mysql",     "mysql_pconnect",       NULL },
+    { "mysql",     "mysql_query",          NULL },
+    { "memcache",  "memcache_connect",     NULL },
+    { "memcache",  "memcache_pconnect",    NULL },
+    { "memcache",  "memcache_replace",     NULL },
+    { "memcache",  "memcache_delete",      NULL },
+    { "memcache",  "memcache_set",         NULL },
+    { "memcache",  "memcache_get",         NULL },
+    { "memcache",  "memcache_increment",   NULL },
+    { "memcache",  "memcache_decrement",   NULL },
+    { "mysqli",    "mysqli_connect",       NULL },
+    { "mysqli",    "mysqli_real_connect",  NULL },
+    { "mysqli",    "mysqli_exec",          NULL },
+    { "mysqli",    "mysqli_query",         NULL },
+    { "mysqli",    "mysqli_real_query",    NULL },
+    { "mysqli",    "mysqli_multi_query",   NULL },
+    { "mysqli",    "mysqli_stmt_execute",  NULL }
+};
+
+static
+void s_datadog_monitoring_proxy (INTERNAL_FUNCTION_PARAMETERS)
+{
+    size_t i, num_funcs = sizeof (s_monitored_funcs) / sizeof (s_monitored_funcs [0]);
+    const char *func_name = get_active_function_name (TSRMLS_C);
+
+    // TODO: might move this into hashtable at some point if the number of funcs grow 
+    for (i = 0; i < num_funcs; i++) {
+        if (!strcmp (s_monitored_funcs [i].func_name, func_name)) {
+            zval *tags;
+            char *buffer;
+            struct timeval st_tv, en_tv;
+
+            // First check if this call should be sampled
+            zend_bool sampling = s_check_sample_rate (DATADOG_G (func_sample_rate) TSRMLS_CC);
+
+            if (sampling)
+                if (gettimeofday (&st_tv, NULL) != 0)
+                    sampling = 0;
+
+            // Call the function 
+            s_monitored_funcs [i].handler (INTERNAL_FUNCTION_PARAM_PASSTHRU);
+
+            // Send back the statistics
+            if (sampling) {
+                if (gettimeofday (&en_tv, NULL) == 0) {
+                    struct timeval real_tv;
+
+                    timersub (&en_tv, &st_tv, &real_tv);
+                    spprintf (&buffer, 0, "#extension:%s,#function:%s", s_monitored_funcs [i].extension, s_monitored_funcs [i].func_name);
+
+                    MAKE_STD_ZVAL (tags);
+                    ZVAL_STRING (tags, buffer, 0);
+
+                    s_send_metric ("function.call", timeval_to_msec (real_tv), "ms", DATADOG_G (func_sample_rate), tags TSRMLS_CC);
+                    zval_ptr_dtor (&tags);
+                }
+            }
+            return;
+        }
+    }
+    // TODO: if we come here something went seriously wrong
+}
+
+static
+void s_datadog_override_monitored (TSRMLS_D)
+{
+    int i, num_funcs;
+    zend_function *entry;
+
+    // Add monitored functions
+    num_funcs = sizeof (s_monitored_funcs) / sizeof (s_monitored_funcs [0]);
+
+    for (i = 0; i < num_funcs; i++) {
+        if (zend_hash_find (EG (function_table), s_monitored_funcs [i].func_name, strlen (s_monitored_funcs [i].func_name) + 1, (void **) &entry) == SUCCESS) {
+            // Store a pointer to the original function handler
+    		s_monitored_funcs [i].handler = entry->internal_function.handler;
+
+            // Override the function handler with the monitoring proxy
+    		entry->internal_function.handler = s_datadog_monitoring_proxy;
+    	}
+    }
+}
+
 PHP_RINIT_FUNCTION(datadog)
 {
     if (DATADOG_G (enabled)) {
@@ -773,7 +870,13 @@ PHP_RINIT_FUNCTION(datadog)
 
         // Override error handling
         s_datadog_override_error_handler (TSRMLS_C);
-
+#ifdef mikko_0
+        if (!DATADOG_G (overridden) && DATADOG_G (function_sampling) != 0.0) {
+            // Override the functions / methods we want to monitor
+            s_datadog_override_monitored (TSRMLS_C);
+            DATADOG_G (overridden) = 1;
+        }
+#endif
         // Init datadog, main timer
         DATADOG_G (timing) = s_datadog_timing (TSRMLS_C);
     }
@@ -832,10 +935,10 @@ PHP_GINIT_FUNCTION(datadog)
 /* {{{ PHP_MINFO_FUNCTION(datadog) */
 PHP_MINFO_FUNCTION(datadog)
 {
-    php_info_print_table_start();
-    php_info_print_table_row(2, "datadog extension", "enabled");
-    php_info_print_table_row(2, "datadog version", PHP_DATADOG_EXTVER);
-    php_info_print_table_end();
+    php_info_print_table_start ();
+    php_info_print_table_row (2, "datadog extension", "enabled");
+    php_info_print_table_row (2, "datadog version",    PHP_DATADOG_EXTVER);
+    php_info_print_table_end ();
 
     DISPLAY_INI_ENTRIES();
 }
@@ -845,10 +948,10 @@ static zend_function_entry datadog_functions[] = {
     PHP_FE (datadog_gauge,             NULL)
     PHP_FE (datadog_histogram,         NULL)
     PHP_FE (datadog_set,               NULL)
-    PHP_FE (datadog_counter_increment,         NULL)
-    PHP_FE (datadog_counter_decrement,         NULL)
-    PHP_FE (datadog_gauge_increment,         NULL)
-    PHP_FE (datadog_gauge_decrement,         NULL)
+    PHP_FE (datadog_counter_increment, NULL)
+    PHP_FE (datadog_counter_decrement, NULL)
+    PHP_FE (datadog_gauge_increment,   NULL)
+    PHP_FE (datadog_gauge_decrement,   NULL)
     PHP_FE (datadog_set_background,    NULL)
     PHP_FE (datadog_transaction_begin, NULL)
     PHP_FE (datadog_transaction_end,   NULL)
