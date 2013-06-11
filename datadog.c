@@ -376,12 +376,7 @@ void s_send_transaction (php_datadog_timing_t *timing, const char *sub_prefix, d
 static
 php_datadog_timing_t *s_datadog_timing (TSRMLS_D)
 {
-    php_datadog_timing_t *timing;
-
-    if (!DATADOG_G (enabled))
-        return NULL; // Not enabled
-
-    timing = pemalloc (sizeof (php_datadog_timing_t), 1);
+    php_datadog_timing_t *timing = pemalloc (sizeof (php_datadog_timing_t), 1);
 
     if (gettimeofday (&timing->st_tv, NULL) != 0) {
         // TODO: handle fail
@@ -764,8 +759,10 @@ static
 void s_datadog_override_error_handler (TSRMLS_D) 
 {
     // TODO: set_error_handler will override this, will need to add some code for handling that
-    DATADOG_G (zend_error_cb) = zend_error_cb;
-    zend_error_cb = &s_datadog_capture_error;
+    if (DATADOG_G (zend_error_cb) != &s_datadog_capture_error) {
+        DATADOG_G (zend_error_cb) = zend_error_cb;
+        zend_error_cb = &s_datadog_capture_error;
+    }
 }
 
 typedef void (*datadog_handler) (INTERNAL_FUNCTION_PARAMETERS);
@@ -906,6 +903,9 @@ PHP_RSHUTDOWN_FUNCTION(datadog)
 
         if (DATADOG_G (request_tags))
             pefree (DATADOG_G (request_tags), 1);
+
+        if (DATADOG_G (zend_error_cb) == &s_datadog_capture_error)
+            zend_error_cb = DATADOG_G (zend_error_cb);
     }
     return SUCCESS;
 }
