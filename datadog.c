@@ -677,7 +677,7 @@ void s_datadog_capture_error (int type, const char *error_filename, const uint e
 {
     TSRMLS_FETCH ();
 
-    if (DATADOG_G (error_reporting) & type) {
+    if (DATADOG_G (enabled) && DATADOG_G (error_reporting) & type) {
         zval *tags;
         const char *pretty_tag = NULL;
 
@@ -752,17 +752,7 @@ void s_datadog_capture_error (int type, const char *error_filename, const uint e
         zval_ptr_dtor (&tags);
     }
     // pass through to the original error callback
-    DATADOG_G (zend_error_cb) (type, error_filename, error_lineno, format, args);
-}
-
-static
-void s_datadog_override_error_handler (TSRMLS_D) 
-{
-    // TODO: set_error_handler will override this, will need to add some code for handling that
-    if (DATADOG_G (zend_error_cb) != &s_datadog_capture_error) {
-        DATADOG_G (zend_error_cb) = zend_error_cb;
-        zend_error_cb = &s_datadog_capture_error;
-    }
+    DATADOG_G (orig_zend_error_cb) (type, error_filename, error_lineno, format, args);
 }
 
 typedef void (*datadog_handler) (INTERNAL_FUNCTION_PARAMETERS);
@@ -864,9 +854,6 @@ PHP_RINIT_FUNCTION(datadog)
     if (DATADOG_G (enabled)) {
         // The request tags
         DATADOG_G (request_tags) = s_request_tags (TSRMLS_C);
-
-        // Override error handling
-        s_datadog_override_error_handler (TSRMLS_C);
 #ifdef mikko_0
         if (!DATADOG_G (overridden) && DATADOG_G (function_sampling) != 0.0) {
             // Override the functions / methods we want to monitor
@@ -903,9 +890,6 @@ PHP_RSHUTDOWN_FUNCTION(datadog)
 
         if (DATADOG_G (request_tags))
             pefree (DATADOG_G (request_tags), 1);
-
-        if (DATADOG_G (zend_error_cb) == &s_datadog_capture_error)
-            zend_error_cb = DATADOG_G (zend_error_cb);
     }
     return SUCCESS;
 }
@@ -913,6 +897,9 @@ PHP_RSHUTDOWN_FUNCTION(datadog)
 /* {{{ PHP_MINIT_FUNCTION(datadog) */
 PHP_MINIT_FUNCTION(datadog)
 {
+    DATADOG_G (orig_zend_error_cb) = zend_error_cb;
+    zend_error_cb = &s_datadog_capture_error;
+
     REGISTER_INI_ENTRIES();
     return SUCCESS;
 }
