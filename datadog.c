@@ -45,6 +45,11 @@
 
 #define timeval_to_double(_my_tv) (double)(_my_tv).tv_sec + ((double)(_my_tv).tv_usec / 1000000.0)
 
+/* The original error callback, there seems to be no typedef for this */
+static
+	void (*orig_zend_error_cb) (int type, const char *error_filename, const uint error_lineno, const char *format, va_list args);
+
+
 // Bring in the globals
 ZEND_DECLARE_MODULE_GLOBALS(datadog)
 
@@ -752,7 +757,7 @@ void s_datadog_capture_error (int type, const char *error_filename, const uint e
         zval_ptr_dtor (&tags);
     }
     // pass through to the original error callback
-    DATADOG_G (orig_zend_error_cb) (type, error_filename, error_lineno, format, args);
+    orig_zend_error_cb (type, error_filename, error_lineno, format, args);
 }
 
 typedef void (*datadog_handler) (INTERNAL_FUNCTION_PARAMETERS);
@@ -897,7 +902,7 @@ PHP_RSHUTDOWN_FUNCTION(datadog)
 /* {{{ PHP_MINIT_FUNCTION(datadog) */
 PHP_MINIT_FUNCTION(datadog)
 {
-    DATADOG_G (orig_zend_error_cb) = zend_error_cb;
+    orig_zend_error_cb = zend_error_cb;
     zend_error_cb = &s_datadog_capture_error;
 
     REGISTER_INI_ENTRIES();
@@ -908,6 +913,8 @@ PHP_MINIT_FUNCTION(datadog)
 /* {{{ PHP_MSHUTDOWN_FUNCTION(datadog) */
 PHP_MSHUTDOWN_FUNCTION(datadog)
 {
+	zend_error_cb = orig_zend_error_cb;
+
     UNREGISTER_INI_ENTRIES();
     return SUCCESS;
 }

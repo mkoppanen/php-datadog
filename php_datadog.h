@@ -56,9 +56,6 @@ ZEND_BEGIN_MODULE_GLOBALS(datadog)
     zend_bool strip_query;                  /* Whether to strip query string from tags */
     int error_reporting;                    /* Same as php error_reporting, sets bitmask for reported errors */
 
-    /* The original error callback, there seems to be no typedef for this */
-    void (*orig_zend_error_cb) (int type, const char *error_filename, const uint error_lineno, const char *format, va_list args);
-
 ZEND_END_MODULE_GLOBALS(datadog)
 
 ZEND_EXTERN_MODULE_GLOBALS(datadog)
