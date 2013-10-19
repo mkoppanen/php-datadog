@@ -753,7 +753,7 @@ void s_datadog_capture_error (int type, const char *error_filename, const uint e
         MAKE_STD_ZVAL (tags);
         ZVAL_STRING (tags, pretty_tag, 1);
 
-        s_send_metric ("error.reporting", 1.0, "c", 1.0, tags TSRMLS_CC);
+        s_send_incr_decr ("error.reporting", '+', 1.0, "c", 1.0, tags TSRMLS_CC);
         zval_ptr_dtor (&tags);
     }
     // pass through to the original error callback
