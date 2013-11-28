@@ -880,7 +880,6 @@ zend_bool s_datadog_override_monitored (TSRMLS_D)
                 continue;
             }
         }
-
         // Allocate
         php_datadog_func_entry_t *entry = pecalloc (1, sizeof (php_datadog_func_entry_t), 1);
 
@@ -913,14 +912,6 @@ PHP_RINIT_FUNCTION(datadog)
 
         // Init datadog, main timer
         DATADOG_G (timing) = s_datadog_timing (TSRMLS_C);
-
-        // Override monitored functions
-        if (DATADOG_G(function_sampling) && !DATADOG_G (overridden)) {
-            if (!s_datadog_override_monitored (TSRMLS_C)) {
-                return FAILURE;
-            }
-            DATADOG_G (overridden) = 1;
-        }
     }
     return SUCCESS;
 }
@@ -981,6 +972,10 @@ PHP_GINIT_FUNCTION(datadog)
 
     /* Initialise hash table for monitored functions */
     zend_hash_init (&datadog_globals->function_entries, 20, NULL, NULL, 1);
+
+    if (!s_datadog_override_monitored (TSRMLS_C)) {
+        return ;
+    }
 }
 
 /* {{{ PHP_MINFO_FUNCTION(datadog) */
