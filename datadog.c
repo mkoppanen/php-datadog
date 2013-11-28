@@ -674,7 +674,7 @@ PHP_INI_BEGIN()
     STD_PHP_INI_ENTRY("datadog.strip_query",       "1",                    PHP_INI_PERDIR, OnUpdateBool,                  strip_query,       zend_datadog_globals, datadog_globals)
     STD_PHP_INI_ENTRY("datadog.error_reporting",   "E_ALL",                PHP_INI_ALL,    OnUpdateDatadogErrorReporting, error_reporting,   zend_datadog_globals, datadog_globals)
     STD_PHP_INI_ENTRY("datadog.function_sampling", "0",                    PHP_INI_PERDIR, OnUpdateBool,                  function_sampling, zend_datadog_globals, datadog_globals)
-    STD_PHP_INI_ENTRY("datadog.func_sample_rate",  "0.5",                  PHP_INI_ALL,    OnUpdateReal,                  func_sample_rate,  zend_datadog_globals, datadog_globals)
+    STD_PHP_INI_ENTRY("datadog.function_sample_rate",  "0.5",                  PHP_INI_ALL,    OnUpdateReal,                  function_sample_rate,  zend_datadog_globals, datadog_globals)
 PHP_INI_END()
 
 static
@@ -682,7 +682,7 @@ void s_datadog_capture_error (int type, const char *error_filename, const uint e
 {
     TSRMLS_FETCH ();
 
-    if (DATADOG_G (enabled) && DATADOG_G (error_reporting) & type) {
+    if (DATADOG_G (enabled) && (DATADOG_G (error_reporting) & type) == type) {
         zval *tags;
         const char *pretty_tag = NULL;
 
@@ -762,112 +762,165 @@ void s_datadog_capture_error (int type, const char *error_filename, const uint e
 
 typedef void (*datadog_handler) (INTERNAL_FUNCTION_PARAMETERS);
 
-typedef struct _php_datadog_func_entry_t {
+typedef struct {
     const char *extension;
+    const char *class_name;
     const char *func_name;
     datadog_handler handler;
 } php_datadog_func_entry_t;
 
 static
 php_datadog_func_entry_t s_monitored_funcs [] = {
-    { "mysql",     "mysql_connect",        NULL },
-    { "mysql",     "mysql_pconnect",       NULL },
-    { "mysql",     "mysql_query",          NULL },
-    { "memcache",  "memcache_connect",     NULL },
-    { "memcache",  "memcache_pconnect",    NULL },
-    { "memcache",  "memcache_replace",     NULL },
-    { "memcache",  "memcache_delete",      NULL },
-    { "memcache",  "memcache_set",         NULL },
-    { "memcache",  "memcache_get",         NULL },
-    { "memcache",  "memcache_increment",   NULL },
-    { "memcache",  "memcache_decrement",   NULL },
-    { "mysqli",    "mysqli_connect",       NULL },
-    { "mysqli",    "mysqli_real_connect",  NULL },
-    { "mysqli",    "mysqli_exec",          NULL },
-    { "mysqli",    "mysqli_query",         NULL },
-    { "mysqli",    "mysqli_real_query",    NULL },
-    { "mysqli",    "mysqli_multi_query",   NULL },
-    { "mysqli",    "mysqli_stmt_execute",  NULL }
+    { "mysql",     NULL,  "mysql_connect",        NULL },
+    { "mysql",     NULL,  "mysql_pconnect",       NULL },
+    { "mysql",     NULL,  "mysql_query",          NULL },
+    { "memcache",  NULL,  "memcache_connect",     NULL },
+    { "memcache",  NULL,  "memcache_pconnect",    NULL },
+    { "memcache",  NULL,  "memcache_replace",     NULL },
+    { "memcache",  NULL,  "memcache_delete",      NULL },
+    { "memcache",  NULL,  "memcache_set",         NULL },
+    { "memcache",  NULL,  "memcache_get",         NULL },
+    { "memcache",  NULL,  "memcache_increment",   NULL },
+    { "memcache",  NULL,  "memcache_decrement",   NULL },
+    { "mysqli",    NULL,  "mysqli_connect",       NULL },
+    { "mysqli",    NULL,  "mysqli_real_connect",  NULL },
+    { "mysqli",    NULL,  "mysqli_exec",          NULL },
+    { "mysqli",    NULL,  "mysqli_query",         NULL },
+    { "mysqli",    NULL,  "mysqli_real_query",    NULL },
+    { "mysqli",    NULL,  "mysqli_multi_query",   NULL },
+    { "mysqli",    NULL,  "mysqli_stmt_execute",  NULL },
+    { "PDO",       "pdo", "__construct",          NULL },
+    { "PDO",       "pdo", "exec",                 NULL },
+    { "PDO",       "pdo", "prepare",              NULL },
+    { "PDO",       "pdo", "query",                NULL },
+    { "PDO",       "pdo", "commit",               NULL }
 };
+
+
+static
+void s_prepare_name (smart_str *name, const char *class_name, const char *function_name)
+{
+    if (class_name && strlen (class_name)) {
+        smart_str_appends (name, class_name);
+        smart_str_appends (name, "::");
+    }
+    smart_str_appends (name, function_name);
+    smart_str_0 (name);
+
+    name->c = php_strtolower (name->c, name->len);
+}
 
 static
 void s_datadog_monitoring_proxy (INTERNAL_FUNCTION_PARAMETERS)
 {
-    size_t i, num_funcs = sizeof (s_monitored_funcs) / sizeof (s_monitored_funcs [0]);
-    const char *func_name = get_active_function_name (TSRMLS_C);
+    const char *space = NULL;
+    const char * const class_name = get_active_class_name(&space TSRMLS_CC);
+    const char * const func_name = get_active_function_name (TSRMLS_C);
+    php_datadog_func_entry_t **entry;
 
-    // TODO: might move this into hashtable at some point if the number of funcs grow 
-    for (i = 0; i < num_funcs; i++) {
-        if (!strcmp (s_monitored_funcs [i].func_name, func_name)) {
-            zval *tags;
-            char *buffer;
-            struct timeval st_tv, en_tv;
+    smart_str name = {0};
+    s_prepare_name (&name, class_name, func_name);
 
-            // First check if this call should be sampled
-            zend_bool sampling = s_check_sample_rate (DATADOG_G (func_sample_rate) TSRMLS_CC);
+    if (zend_hash_find (&DATADOG_G(function_entries), name.c, name.len + 1, (void **) &entry) == SUCCESS) {
+        zval *tags;
+        char *buffer;
+        struct timeval st_tv, en_tv;
 
-            if (sampling)
-                if (gettimeofday (&st_tv, NULL) != 0)
-                    sampling = 0;
+        // First check if this call should be sampled
+        zend_bool sampling = s_check_sample_rate (DATADOG_G (function_sample_rate) TSRMLS_CC);
 
-            // Call the function 
-            s_monitored_funcs [i].handler (INTERNAL_FUNCTION_PARAM_PASSTHRU);
+        if (sampling)
+            if (gettimeofday (&st_tv, NULL) != 0)
+                sampling = 0;
 
-            // Send back the statistics
-            if (sampling) {
-                if (gettimeofday (&en_tv, NULL) == 0) {
-                    struct timeval real_tv;
+        // Call the function
+        (*entry)->handler (INTERNAL_FUNCTION_PARAM_PASSTHRU);
 
-                    timersub (&en_tv, &st_tv, &real_tv);
-                    spprintf (&buffer, 0, "#extension:%s,#function:%s", s_monitored_funcs [i].extension, s_monitored_funcs [i].func_name);
+        // Send back the statistics
+        if (sampling) {
+            if (gettimeofday (&en_tv, NULL) == 0) {
+                struct timeval real_tv;
 
-                    MAKE_STD_ZVAL (tags);
-                    ZVAL_STRING (tags, buffer, 0);
+                timersub (&en_tv, &st_tv, &real_tv);
+                spprintf (&buffer, 0, "#extension:%s,#function:%s", (*entry)->extension, name.c);
 
-                    s_send_metric ("function.call", timeval_to_msec (real_tv), "ms", DATADOG_G (func_sample_rate), tags TSRMLS_CC);
-                    zval_ptr_dtor (&tags);
-                }
+                MAKE_STD_ZVAL (tags);
+                ZVAL_STRING (tags, buffer, 0);
+
+                s_send_metric ("function.call", timeval_to_msec (real_tv), "ms", DATADOG_G (function_sample_rate), tags TSRMLS_CC);
+                zval_ptr_dtor (&tags);
             }
-            return;
         }
     }
-    // TODO: if we come here something went seriously wrong
+    smart_str_free (&name);
 }
 
 static
-void s_datadog_override_monitored (TSRMLS_D)
+zend_bool s_datadog_override_monitored (TSRMLS_D)
 {
-    int i, num_funcs;
-    zend_function *entry;
+    int i, num_entries;
 
     // Add monitored functions
-    num_funcs = sizeof (s_monitored_funcs) / sizeof (s_monitored_funcs [0]);
+    num_entries = sizeof (s_monitored_funcs) / sizeof (s_monitored_funcs [0]);
 
-    for (i = 0; i < num_funcs; i++) {
-        if (zend_hash_find (EG (function_table), s_monitored_funcs [i].func_name, strlen (s_monitored_funcs [i].func_name) + 1, (void **) &entry) == SUCCESS) {
-            // Store a pointer to the original function handler
-    		s_monitored_funcs [i].handler = entry->internal_function.handler;
+    // Override monitored functions
+    for (i = 0; i < num_entries; i++) {
+        zend_function *fentry = NULL;
+        zend_class_entry **class_entry;
 
-            // Override the function handler with the monitoring proxy
-    		entry->internal_function.handler = s_datadog_monitoring_proxy;
-    	}
+        /* Is this a class? */
+        if (s_monitored_funcs [i].class_name) {
+            if (zend_hash_find (CG (class_table), s_monitored_funcs [i].class_name, strlen (s_monitored_funcs [i].class_name) + 1, (void **) &class_entry) != SUCCESS ||
+                zend_hash_find(&((*class_entry)->function_table), s_monitored_funcs [i].func_name, strlen (s_monitored_funcs [i].func_name) + 1, (void **) &fentry) != SUCCESS) {
+                    continue;
+            }
+        }
+        else {
+            if (zend_hash_find (CG (function_table), s_monitored_funcs [i].func_name, strlen (s_monitored_funcs [i].func_name) + 1, (void **) &fentry) != SUCCESS) {
+                continue;
+            }
+        }
+
+        // Allocate
+        php_datadog_func_entry_t *entry = pecalloc (1, sizeof (php_datadog_func_entry_t), 1);
+
+        entry->extension  = s_monitored_funcs [i].extension;
+        entry->class_name = s_monitored_funcs [i].class_name;
+        entry->func_name  = s_monitored_funcs [i].func_name;
+        entry->handler    = fentry->internal_function.handler;
+
+        smart_str name = {0};
+        s_prepare_name (&name, s_monitored_funcs [i].class_name, s_monitored_funcs [i].func_name);
+
+        // Store to our hash table
+        if (zend_hash_add (&DATADOG_G(function_entries), name.c, name.len + 1, (void *) &entry, sizeof (php_datadog_func_entry_t *), NULL) == FAILURE) {
+            smart_str_free (&name);
+            pefree (entry, 1);
+            continue;
+        }
+        // Override the function handler with the monitoring proxy
+        fentry->internal_function.handler =& s_datadog_monitoring_proxy;
+        smart_str_free (&name);
     }
+    return 1;
 }
 
 PHP_RINIT_FUNCTION(datadog)
 {
     if (DATADOG_G (enabled)) {
-        // The request tags
+        // Initialise request tags
         DATADOG_G (request_tags) = s_request_tags (TSRMLS_C);
-#ifdef mikko_0
-        if (!DATADOG_G (overridden) && DATADOG_G (function_sampling) != 0.0) {
-            // Override the functions / methods we want to monitor
-            s_datadog_override_monitored (TSRMLS_C);
-            DATADOG_G (overridden) = 1;
-        }
-#endif
+
         // Init datadog, main timer
         DATADOG_G (timing) = s_datadog_timing (TSRMLS_C);
+
+        // Override monitored functions
+        if (DATADOG_G(function_sampling) && !DATADOG_G (overridden)) {
+            if (!s_datadog_override_monitored (TSRMLS_C)) {
+                return FAILURE;
+            }
+            DATADOG_G (overridden) = 1;
+        }
     }
     return SUCCESS;
 }
@@ -924,6 +977,10 @@ PHP_GINIT_FUNCTION(datadog)
 {
     datadog_globals->background  = 0;
     datadog_globals->transaction = NULL;
+    datadog_globals->overridden  = 0;
+
+    /* Initialise hash table for monitored functions */
+    zend_hash_init (&datadog_globals->function_entries, 20, NULL, NULL, 1);
 }
 
 /* {{{ PHP_MINFO_FUNCTION(datadog) */

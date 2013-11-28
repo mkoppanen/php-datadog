@@ -44,8 +44,9 @@ ZEND_BEGIN_MODULE_GLOBALS(datadog)
     char *app_name;                         /* name of the application */
     char *prefix;                           /* prefix for the metrics */
     zend_bool function_sampling;            /* Turn function sampling on or off */
-    double func_sample_rate;                /* Sample rate for functions */
+    double function_sample_rate;                /* Sample rate for functions */
 
+    HashTable function_entries;
     zend_bool overridden;                   /* Internal flag indicating if functions have been overridden */
 
     php_datadog_timing_t *timing;           /* when the request started */
