@@ -673,8 +673,10 @@ PHP_INI_BEGIN()
     STD_PHP_INI_ENTRY("datadog.prefix",            "php.",                 PHP_INI_PERDIR, OnUpdateString,                prefix,            zend_datadog_globals, datadog_globals)
     STD_PHP_INI_ENTRY("datadog.strip_query",       "1",                    PHP_INI_PERDIR, OnUpdateBool,                  strip_query,       zend_datadog_globals, datadog_globals)
     STD_PHP_INI_ENTRY("datadog.error_reporting",   "E_ALL",                PHP_INI_ALL,    OnUpdateDatadogErrorReporting, error_reporting,   zend_datadog_globals, datadog_globals)
+#if 0
     STD_PHP_INI_ENTRY("datadog.function_sampling", "0",                    PHP_INI_PERDIR, OnUpdateBool,                  function_sampling, zend_datadog_globals, datadog_globals)
     STD_PHP_INI_ENTRY("datadog.function_sample_rate",  "0.5",                  PHP_INI_ALL,    OnUpdateReal,                  function_sample_rate,  zend_datadog_globals, datadog_globals)
+#endif
 PHP_INI_END()
 
 static
@@ -759,6 +761,8 @@ void s_datadog_capture_error (int type, const char *error_filename, const uint e
     // pass through to the original error callback
     orig_zend_error_cb (type, error_filename, error_lineno, format, args);
 }
+
+#if 0
 
 typedef void (*datadog_handler) (INTERNAL_FUNCTION_PARAMETERS);
 
@@ -904,6 +908,8 @@ zend_bool s_datadog_override_monitored (TSRMLS_D)
     return 1;
 }
 
+#endif
+
 PHP_RINIT_FUNCTION(datadog)
 {
     if (DATADOG_G (enabled)) {
@@ -957,7 +963,7 @@ PHP_MINIT_FUNCTION(datadog)
 /* {{{ PHP_MSHUTDOWN_FUNCTION(datadog) */
 PHP_MSHUTDOWN_FUNCTION(datadog)
 {
-	zend_error_cb = orig_zend_error_cb;
+    zend_error_cb = orig_zend_error_cb;
 
     UNREGISTER_INI_ENTRIES();
     return SUCCESS;
@@ -968,14 +974,15 @@ PHP_GINIT_FUNCTION(datadog)
 {
     datadog_globals->background  = 0;
     datadog_globals->transaction = NULL;
-    datadog_globals->overridden  = 0;
 
+#if 0
     /* Initialise hash table for monitored functions */
     zend_hash_init (&datadog_globals->function_entries, 20, NULL, NULL, 1);
 
     if (!s_datadog_override_monitored (TSRMLS_C)) {
         return ;
     }
+#endif
 }
 
 /* {{{ PHP_MINFO_FUNCTION(datadog) */
