@@ -43,11 +43,7 @@ ZEND_BEGIN_MODULE_GLOBALS(datadog)
     char *agent_addr;                       /* where to connect for the agent */
     char *app_name;                         /* name of the application */
     char *prefix;                           /* prefix for the metrics */
-    zend_bool function_sampling;            /* Turn function sampling on or off */
-    double function_sample_rate;                /* Sample rate for functions */
-#if 0
-    HashTable function_entries;
-#endif
+
     php_datadog_timing_t *timing;           /* when the request started */
     php_datadog_transaction_t *transaction; /* currently active transaction */
     zend_bool background;                   /* if this execution is a background task */
