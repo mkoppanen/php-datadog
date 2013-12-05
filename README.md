@@ -31,7 +31,7 @@ RedHat-based systems:
 
 Debian (including Ubuntu etc)
 
-    echo "extension=datadog.so" > /etc/php5/conf.d//datadog.ini
+    echo "extension=datadog.so" > /etc/php5/conf.d/datadog.ini
 
 
 Others:
