@@ -103,6 +103,10 @@ char *s_request_tags (TSRMLS_D)
         }
     }
 
+    if (SG (request_info).request_method) {
+        s_smart_str_append_tag (&tags, "request_method", SG (request_info).request_method);
+    }
+
     // Requested filename
     if (SG (request_info).path_translated) {
         char *filename;
